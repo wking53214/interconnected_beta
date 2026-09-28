@@ -1,173 +1,109 @@
-# interconnected_beta
+# interconnected_beta (β)
 
-**Role in the governed action stack:** DECISION — Lock states + Keys → governed **Decision** with narrative (reasoning, reversal conditions, instructions).
+Lock states + Keys → a governed **Decision with narrative**. Version `0.1.0`. Depends on [`interconnected_zeta`](https://github.com/wking53214/interconnected_zeta). Python ≥ 3.9.
+
+## 1. Pipeline Position & Role
+
+**DECISION.** Third stage of the extracted spine.
 
 ```text
-α Alpha (Keys) → ζ Zeta (Locks) → β Beta (Decision) → δ Delta (custody)
+α Alpha (Keys) → ζ Zeta (Locks) → β Beta (this repo) → δ Delta (custody)
 ```
 
-Part of the composable decision spine. Live orchestrated path: [observe-perceive](https://github.com/wking53214/observe-perceive). Custody: [interconnected_delta](https://github.com/wking53214/interconnected_delta).
+**Policy approval is not authorization.** This layer produces a decision and an explanation. It does not issue human authority to execute.
 
-**Policy approval is not authorization.** This layer produces a decision and explanation; it does not issue human authority to execute.
+## 2. Full System Scope & Architectural Depth
 
----
+Two parts: extracted verdict shape, and a narrative layer that **does not exist in the source**.
 
-Lock states + Keys → a governed **Decision** with narrative — the third
-stage of the pipeline: `alpha` detects Keys, `zeta` evaluates Locks,
-`beta` decides, and explains why.
+### Extracted (verdict shape, reinvented three times)
 
-## Why this exists
+`FusedVerdict` appears near-identically in clinical OBSERVE, driving safety, and ascent/altitude compute. Shared fields: `risk_score`, `regime`, `confidence`, `entropy`, `active_engines`, `triggered_rules`, `timestamp`, `audit_hash`, `escalation_required`.
 
-Same extraction discipline as `zeta` and `alpha`, but beta's story has
-two parts, not one.
+`beta.Decision` does **not** reproduce all nine:
 
-### Part 1: extracted (the verdict shape, reinvented three times)
+| Source field | β treatment |
+|---|---|
+| `confidence`, `timestamp` | Kept |
+| `audit_hash` | Distinct from `decision_fingerprint`. Audit hash is a ledger concern (δ). |
+| `risk_score` + `regime` | Collapsed into free-form `decision: str`. Simplification, not a lossless rename. No 4-level ordinal. |
+| `triggered_rules` | Rough analogue: `triggered_by_keys` / `triggered_by_locks` (bare names, not full messages) |
+| `escalation_required` | **Not** a field match. Source is stateful per-entity `EscalationPolicy`. Engine is stateless per call. Nearest analogue: `newly_triggered_locks` from `LockResult.changed`. |
+| `entropy`, `active_engines` | **Dropped.** Belong to multi-engine fusion α does not perform. |
 
-`FusedVerdict` is defined near-identically three times in the source,
-for three unrelated domains, none importing from the others:
+`decision_fingerprint` is extracted from OBSERVE (`observe_consolidated.py:236-244`): SHA-256 of the decision's own inputs, wall-clock-free, distinct from the ledger chain hash.
 
-| Domain | File | Notable extra field |
-|---|---|---|
-| Clinical/pediatric | `observe_consolidated.py:82-97` | `decision_fingerprint` |
-| Driving safety | `drive_safety_module.py:89-99` | (the minimal base shape) |
-| Ascent/altitude compute | `ascent_compute_module.py:102-113` | `reserve_factor` |
+Confidence: geometric-mean analogue over Keys **necessary** to satisfy each matched rule's `open_locks` combination (AND/OR/N_OF_M). Averaging every present-and-required Key would let an incidental zero-confidence Key zero out an OR lock. Deliberate deviation: source `ConsensusEngine` returns `0.0` when nothing was evaluated; β returns `1.0` when a rule matches on *absence* of danger (all `closed_locks`).
 
-All three share 9 fields: `risk_score`, `regime`, `confidence`,
-`entropy`, `active_engines`, `triggered_rules`, `timestamp`,
-`audit_hash`, `escalation_required`. **`beta.Decision` does not
-reproduce all nine** — an earlier draft of this README claimed it
-"generalizes that shared core" with a field mapping in the docstring
-that didn't actually exist; adversarial review caught the gap. The real
-accounting (full table in `beta/verdict.py`'s docstring):
+### New (narrative — not present in OBSERVE/PERCEIVE/drive/ascent)
 
-- `confidence`, `timestamp`, `audit_hash` — kept, same meaning.
-- `risk_score` + `regime` — collapsed into one free-form `decision: str`.
-  A real simplification (no continuous score, no 4-level ordinal), not
-  a lossless rename.
-- `triggered_rules` — roughly analogous to `triggered_by_keys` /
-  `triggered_by_locks`, but those are bare names, not full messages.
-- `escalation_required` — **not** a field match. The source means "a
-  NEW escalation this cycle," backed by a stateful per-entity
-  `EscalationPolicy` with dwell counting and a cooldown lock
-  (`observe_consolidated.py:846-889`). beta's `DecisionEngine` is
-  stateless per call. The closest analogue is the new
-  `newly_triggered_locks` field, sourced from zeta's
-  `LockResult.changed` (real information, since zeta's Locks already
-  carry dwell/cooldown state) — but it answers "which locks changed,"
-  a narrower question than the source's field.
-- `entropy`, `active_engines` — **dropped entirely, no analogue.** Both
-  belong to the source's multi-engine risk-fusion step (adaptive engine
-  selection, per-engine audit trail). beta/alpha have no such step —
-  alpha runs all detectors always, it doesn't adaptively select a
-  subset — so nothing stands in for these.
+`reasoning`, `reversal_conditions`, `instructions` were searched for across those four sources. None has them. This is the gap the project set out to close.
 
-Also extracted, verbatim: `decision_fingerprint` (`observe_consolidated.py:
-236-244`) — a reproducible, wall-clock-free SHA256 of a decision's own
-inputs, deliberately distinct from `audit_hash` (the ledger's chained,
-tamper-evident hash, which needs ledger state that only exists once
-something is recorded — `interconnected_delta`'s job, not beta's).
+### Engine
 
-Also extended: `PERCEIVE`'s `ConsensusEngine.evaluate` geometric-mean
-confidence (`perceive_consolidated.py:502`) — beta averages the
-confidence of whichever Keys were actually *necessary* to satisfy the
-matched rule's `open_locks` (adversarial review caught an earlier
-version averaging every present-and-required Key regardless of a
-lock's combination — so an OR lock satisfied by one strong Key could
-have its confidence zeroed out by a second, unnecessary, incidentally-
-present zero-confidence Key; fixed by crediting only the Key(s) each
-lock's `AND`/`OR`/`N_OF_M` combination actually needed). One deliberate
-deviation from the source, not an extraction: `ConsensusEngine` returns
-`0.0` when there's nothing to average ("no gates evaluated" is an error
-there). Beta returns `1.0` instead, because a rule can legitimately
-match on the *absence* of danger Keys alone (all requirements in
-`closed_locks`, nothing in `open_locks`) — that's a clean match, not
-"no confidence in anything."
+- `DecisionRule`: `decision_id`, `decision`, `open_locks`, `closed_locks`, `priority`, templates for narrative. **Declarative, not callables.** Auditable without executing code.
+- Fail-closed on unevaluated locks: a rule requiring a lock open/closed that was never evaluated does **not** match.
+- Ambiguity is an error: two rules at the same highest priority → `AmbiguousRuleError`, not a coin flip.
+- Registry consistency at construction: unknown lock names → `UnknownLockError`.
+- No matching rule → `NoMatchingRuleError`.
 
-### Part 2: new (the narrative — not present anywhere in the source)
+`DecisionEngine` is **stateless per call**. Lock dwell/cooldown lives in ζ.
 
-`reasoning`, `reversal_conditions`, `instructions` were searched for
-across `observe_consolidated.py`, `perceive_consolidated.py`,
-`drive_safety_module.py`, and `ascent_compute_module.py`. None of the
-four has anything resembling them. This is the actual gap this whole
-project set out to close — a governed decision that can explain *why*
-it was made, *what would change it*, and *what should happen next* —
-not something being generalized from existing code.
+## 3. What It Does NOT Do / Non-Goals
 
-## Design choices worth knowing about
+- Does **not** issue authorization, grants, or execution receipts.
+- Does **not** execute. No callables on rules.
+- Does **not** persist. Fingerprint is recomputable; chain hash is δ's job.
+- Does **not** perform post-decision agent routing.
+- Does **not** reproduce OBSERVE risk fusion, entropy, or engine selection.
+- Does **not** substitute for PERCEIVE's six-gate consensus (observe-perceive still runs PERCEIVE).
+- **Not thread-safe** (`DecisionRuleRegistry.register`).
 
-- **Declarative rules, not callables.** `DecisionRule` is two sets of
-  lock names (`open_locks`, `closed_locks`), not a Python predicate —
-  same tradeoff `zeta.LockSpec` made with `AND`/`OR`/`N_OF_M` instead of
-  arbitrary boolean expressions. A rule can be printed and audited
-  without executing code.
-- **Fail closed on unevaluated locks.** A rule requiring a lock to be
-  open (or closed) that was never evaluated does **not** match — an
-  unknown state is neither confirmed-open nor confirmed-closed. Matches
-  the fail-closed posture already used elsewhere in this system (e.g.
-  `sentinel_os`'s cassette loader).
-- **Ambiguity is an error, not a coin flip.** If more than one rule
-  matches at the same (highest) priority, `DecisionEngine.decide()`
-  raises `AmbiguousRuleError` rather than picking one arbitrarily.
-- **Registry consistency checked at construction, not first use.**
-  `DecisionEngine.__init__` validates every rule's `open_locks`/
-  `closed_locks` against the supplied `LockRegistry` immediately,
-  raising `UnknownLockError` with the offending lock's name — instead
-  of a bare `KeyError` the first time a mismatched rule happened to
-  match, deep inside `decide()`.
-- **Not thread-safe.** `DecisionRuleRegistry.register()`'s duplicate
-  check is two dict operations, not one atomic one — same pattern
-  already used in `zeta.LockRegistry`. Build a registry once per
-  process, then only read from it.
+## 4. Brutally Honest Current Status & Gaps
 
-## API
+| Gap | Detail |
+|---|---|
+| Not on live orchestrator path | observe-perceive `GovernanceOrchestrator` uses PERCEIVE + Conservation Kernel + `execution_guard`, not `DecisionEngine`. Dual decision path. |
+| Narrative templates | String templates, not a proof that reversal conditions are machine-checked later. δ obligations are a separate mechanism. |
+| Unpinned zeta git dependency | Default-branch drift. |
+| `decision: str` | Free-form. No closed vocabulary (`ESCALATE`/`HOLD`/`DISCHARGE` is convention, not schema). |
+| No identity / actor | `entity_id` is a string. No actor registry. |
+| Stateless engine | Cannot itself debounce. Relies on ζ. If caller bypasses ζ and feeds synthetic `LockResult`s, β will decide. |
+
+36 tests. `pip install -e ".[dev]" && pytest`.
+
+## 5. Core Invariants & Guarantees
+
+- Fail-closed on unknown or unevaluated locks.
+- Ambiguous highest-priority match raises.
+- Fingerprint is a SHA-256 of canonical decision inputs (recomputable, no wall-clock).
+- Only Keys actually needed by each lock's combination contribute to confidence.
+- Policy permission ≠ authorization (stated in the type, not enforced by a grant check — there is none).
+
+## 6. Inputs, Outputs & Type Contracts
 
 ```python
-from datetime import datetime
-from zeta import Combination, LockEvaluator, LockRegistry, LockSpec
-from beta import DecisionEngine, DecisionRule, DecisionRuleRegistry
-
-lock_registry = LockRegistry([
-    LockSpec(lock_id="sepsis_lock",
-             required_keys=("septic_shock", "respiratory_distress"),
-             combination=Combination.OR, dwell_threshold=1, force=True),
-])
-decision_registry = DecisionRuleRegistry([
-    DecisionRule(
-        decision_id="escalate_sepsis", decision="ESCALATE",
-        open_locks=("sepsis_lock",), priority=10,
-        reasoning_template="{decision}: {open_locks} open",
-        reversal_conditions=("sepsis_lock closes",),
-        instructions="Go to emergency room immediately.",
-    ),
-])
-
-lock_evaluator = LockEvaluator(lock_registry)
-decision_engine = DecisionEngine(decision_registry, lock_registry)
-
-keys = ...  # a zeta.KeySet, e.g. from alpha.observe(vitals)
-lock_results = lock_evaluator.evaluate_all("patient_1", keys, datetime.now())
-decision = decision_engine.decide("patient_1", keys, lock_results, datetime.now())
-
-print(decision.decision, decision.reasoning, decision.instructions)
+from beta import DecisionEngine, DecisionRule, DecisionRuleRegistry, Decision
+# Decision fields:
+#   entity_id, decision_id, decision: str
+#   confidence: float, timestamp: datetime
+#   triggered_by_keys, triggered_by_locks, newly_triggered_locks
+#   decision_fingerprint: str
+#   reasoning: str, reversal_conditions: tuple[str, ...], instructions: str
 ```
 
-See `examples/pediatric_discharge.py` for the full alpha → zeta → beta
-pipeline on a realistic timeline.
+`decide(entity_id, keys, lock_results, timestamp) -> Decision`
 
-## Where this fits
+## 7. Stack Integration Topology
 
-```
-interconnected_alpha  -- raw vitals -> named Keys
-interconnected_zeta   -- Keys -> Locks -> open/closed decisions
-interconnected_beta   -- (this repo) Lock states -> a Decision + narrative
-interconnected_delta  -- records the decision, tracks execution, verifies outcome
-```
-
-## Tests
-
-```
-pip install -e ".[dev]"
-pytest
+```text
+α KeySet + ζ Dict[lock_id, LockResult]
+        → β.DecisionEngine.decide → Decision
+                                      → δ.DecisionLedger.append
+                                      → δ.DecisionObligationTracker.open_for_decision
 ```
 
-36 tests. Depends only on `zeta` — no other external packages.
+Hub that does **not** import β: [`observe-perceive`](https://github.com/wking53214/observe-perceive).  
+Custody: [`interconnected_delta`](https://github.com/wking53214/interconnected_delta).
+
+Apache-2.0.
