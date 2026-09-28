@@ -1,5 +1,17 @@
 # interconnected_beta
 
+**Role in the governed action stack:** DECISION — Lock states + Keys → governed **Decision** with narrative (reasoning, reversal conditions, instructions).
+
+```text
+α Alpha (Keys) → ζ Zeta (Locks) → β Beta (Decision) → δ Delta (custody)
+```
+
+Part of the composable decision spine. Live orchestrated path: [observe-perceive](https://github.com/wking53214/observe-perceive). Custody: [interconnected_delta](https://github.com/wking53214/interconnected_delta).
+
+**Policy approval is not authorization.** This layer produces a decision and explanation; it does not issue human authority to execute.
+
+---
+
 Lock states + Keys → a governed **Decision** with narrative — the third
 stage of the pipeline: `alpha` detects Keys, `zeta` evaluates Locks,
 `beta` decides, and explains why.
