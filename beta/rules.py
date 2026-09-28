@@ -69,6 +69,12 @@ class DecisionRule:
 
 
 class DecisionRuleRegistry:
+    """Not thread-safe: `register()`'s duplicate check-then-insert is two
+    separate dict operations, not one atomic one, matching the identical
+    pattern already used (and already shipped) in zeta.LockRegistry.
+    Intended for single-process setup (build the registry once, then only
+    read from it), not concurrent registration."""
+
     def __init__(self, rules: Iterable[DecisionRule] = ()) -> None:
         self._rules: Dict[str, DecisionRule] = {}
         for r in rules:

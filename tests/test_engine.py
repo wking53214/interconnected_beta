@@ -3,7 +3,7 @@ from datetime import datetime
 import pytest
 from zeta import Combination, Key, KeySet, LockEvaluator, LockRegistry, LockSpec
 
-from beta.engine import AmbiguousRuleError, DecisionEngine, NoMatchingRuleError
+from beta.engine import AmbiguousRuleError, DecisionEngine, NoMatchingRuleError, UnknownLockError
 from beta.rules import DecisionRule, DecisionRuleRegistry
 
 T0 = datetime(2026, 1, 1, 12, 0, 0)
@@ -205,6 +205,131 @@ def test_confidence_only_counts_present_keys_in_or_lock():
 
     assert decision.confidence == pytest.approx(0.7)
     assert decision.triggered_by_keys == ("a",)
+
+
+def test_or_lock_confidence_not_zeroed_by_incidentally_present_weak_key():
+    # Regression (adversarial-review blocker): an OR lock only needs ONE
+    # satisfying key. If a SECOND, weaker key also happens to be present
+    # (but wasn't necessary -- the first key alone already satisfies OR),
+    # it must not drag confidence down to near-zero via the geometric
+    # mean. Only the strongest present key should be credited.
+    lock_registry = LockRegistry([
+        LockSpec(lock_id="l1", required_keys=("strong", "weak"), combination=Combination.OR, dwell_threshold=1),
+    ])
+    decision_registry = DecisionRuleRegistry([
+        DecisionRule(decision_id="r1", decision="X", open_locks=("l1",)),
+    ])
+    evaluator = LockEvaluator(lock_registry)
+    keys = KeySet([
+        Key(name="strong", present=True, confidence=0.99),
+        Key(name="weak", present=True, confidence=0.0),  # incidentally also present
+    ])
+    results = evaluator.evaluate_all("patient1", keys, T0)
+
+    engine = DecisionEngine(decision_registry, lock_registry)
+    decision = engine.decide("patient1", keys, results, T0)
+
+    assert decision.confidence == pytest.approx(0.99), (
+        "confidence must reflect the strongest necessary evidence for an OR lock, "
+        "not be zeroed out by an unnecessary weak key that also happened to be present"
+    )
+    assert decision.triggered_by_keys == ("strong",)
+
+
+def test_n_of_m_lock_confidence_credits_only_top_n_keys():
+    # N_OF_M(n=2) over 3 required keys: only the top-2 by confidence were
+    # necessary. A third, weaker present key must not dilute the average.
+    lock_registry = LockRegistry([
+        LockSpec(lock_id="l1", required_keys=("a", "b", "c"), combination=Combination.N_OF_M, n=2, dwell_threshold=1),
+    ])
+    decision_registry = DecisionRuleRegistry([
+        DecisionRule(decision_id="r1", decision="X", open_locks=("l1",)),
+    ])
+    evaluator = LockEvaluator(lock_registry)
+    keys = KeySet([
+        Key(name="a", present=True, confidence=0.9),
+        Key(name="b", present=True, confidence=0.8),
+        Key(name="c", present=True, confidence=0.0),  # 3rd present key, not necessary for N_OF_M(2)
+    ])
+    results = evaluator.evaluate_all("patient1", keys, T0)
+
+    engine = DecisionEngine(decision_registry, lock_registry)
+    decision = engine.decide("patient1", keys, results, T0)
+
+    expected = (0.9 * 0.8) ** 0.5
+    assert decision.confidence == pytest.approx(expected)
+    assert decision.triggered_by_keys == ("a", "b")
+
+
+def test_and_lock_still_averages_every_present_required_key():
+    # Regression guard: the AND case must be unaffected by the OR/N_OF_M
+    # fix -- every required key is necessary for AND, so all of them
+    # (however many are present) should still be credited.
+    lock_registry = LockRegistry([
+        LockSpec(lock_id="l1", required_keys=("a", "b", "c"), combination=Combination.AND, dwell_threshold=1),
+    ])
+    decision_registry = DecisionRuleRegistry([
+        DecisionRule(decision_id="r1", decision="X", open_locks=("l1",)),
+    ])
+    evaluator = LockEvaluator(lock_registry)
+    keys = KeySet([
+        Key(name="a", present=True, confidence=0.9),
+        Key(name="b", present=True, confidence=0.8),
+        Key(name="c", present=True, confidence=0.7),
+    ])
+    results = evaluator.evaluate_all("patient1", keys, T0)
+
+    engine = DecisionEngine(decision_registry, lock_registry)
+    decision = engine.decide("patient1", keys, results, T0)
+
+    expected = (0.9 * 0.8 * 0.7) ** (1 / 3)
+    assert decision.confidence == pytest.approx(expected)
+    assert decision.triggered_by_keys == ("a", "b", "c")
+
+
+# --- Registry consistency validation ---
+
+def test_engine_construction_rejects_rule_referencing_unknown_lock():
+    # Regression: previously this crashed with a bare KeyError deep
+    # inside decide() the first time such a rule happened to match,
+    # instead of failing fast and clearly at construction.
+    lock_registry = LockRegistry([LockSpec(lock_id="known_lock", required_keys=("a",), dwell_threshold=1)])
+    decision_registry = DecisionRuleRegistry([
+        DecisionRule(decision_id="r1", decision="X", open_locks=("nonexistent_lock",)),
+    ])
+    with pytest.raises(UnknownLockError, match="nonexistent_lock"):
+        DecisionEngine(decision_registry, lock_registry)
+
+
+def test_engine_construction_accepts_rule_with_known_locks():
+    lock_registry = LockRegistry([LockSpec(lock_id="known_lock", required_keys=("a",), dwell_threshold=1)])
+    decision_registry = DecisionRuleRegistry([
+        DecisionRule(decision_id="r1", decision="X", open_locks=("known_lock",)),
+    ])
+    DecisionEngine(decision_registry, lock_registry)  # must not raise
+
+
+# --- newly_triggered_locks ---
+
+def test_newly_triggered_locks_true_on_first_open_false_on_subsequent():
+    lock_registry = LockRegistry([
+        LockSpec(lock_id="l1", required_keys=("a",), dwell_threshold=1),
+    ])
+    decision_registry = DecisionRuleRegistry([
+        DecisionRule(decision_id="r1", decision="X", open_locks=("l1",)),
+    ])
+    evaluator = LockEvaluator(lock_registry)
+    engine = DecisionEngine(decision_registry, lock_registry)
+
+    keys = KeySet([Key(name="a", present=True)])
+    results1 = evaluator.evaluate_all("patient1", keys, T0)
+    d1 = engine.decide("patient1", keys, results1, T0)
+    assert d1.newly_triggered_locks == ("l1",)
+
+    from datetime import timedelta
+    results2 = evaluator.evaluate_all("patient1", keys, T0 + timedelta(seconds=1))
+    d2 = engine.decide("patient1", keys, results2, T0 + timedelta(seconds=1))
+    assert d2.newly_triggered_locks == ()
 
 
 # --- Fingerprint determinism ---
