@@ -106,4 +106,4 @@ from beta import DecisionEngine, DecisionRule, DecisionRuleRegistry, Decision
 Hub that does **not** import β: [`observe-perceive`](https://github.com/wking53214/observe-perceive).  
 Custody: [`interconnected_delta`](https://github.com/wking53214/interconnected_delta).
 
-Apache-2.0.
+Proprietary. Copyright (c) 2026 William King. All rights reserved. See LICENSE.
