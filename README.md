@@ -18,7 +18,7 @@ Two parts: extracted verdict shape, and a narrative layer that **does not exist 
 
 ### Extracted (verdict shape, reinvented three times)
 
-`FusedVerdict` appears near-identically in clinical OBSERVE, driving safety, and ascent/altitude compute. Shared fields: `risk_score`, `regime`, `confidence`, `entropy`, `active_engines`, `triggered_rules`, `timestamp`, `audit_hash`, `escalation_required`.
+`FusedVerdict` appears near-identically in three modules of the source codebase. Shared fields: `risk_score`, `regime`, `confidence`, `entropy`, `active_engines`, `triggered_rules`, `timestamp`, `audit_hash`, `escalation_required`.
 
 `beta.Decision` does **not** reproduce all nine:
 
@@ -31,11 +31,11 @@ Two parts: extracted verdict shape, and a narrative layer that **does not exist 
 | `escalation_required` | **Not** a field match. Source is stateful per-entity `EscalationPolicy`. Engine is stateless per call. Nearest analogue: `newly_triggered_locks` from `LockResult.changed`. |
 | `entropy`, `active_engines` | **Dropped.** Belong to multi-engine fusion α does not perform. |
 
-`decision_fingerprint` is extracted from OBSERVE (`observe_consolidated.py:236-244`): SHA-256 of the decision's own inputs, wall-clock-free, distinct from the ledger chain hash.
+`decision_fingerprint` is extracted from the source codebase: SHA-256 of the decision's own inputs, wall-clock-free, distinct from the ledger chain hash.
 
 Confidence: geometric-mean analogue over Keys **necessary** to satisfy each matched rule's `open_locks` combination (AND/OR/N_OF_M). Averaging every present-and-required Key would let an incidental zero-confidence Key zero out an OR lock. Deliberate deviation: source `ConsensusEngine` returns `0.0` when nothing was evaluated; β returns `1.0` when a rule matches on *absence* of danger (all `closed_locks`).
 
-### New (narrative — not present in OBSERVE/PERCEIVE/drive/ascent)
+### New (narrative, not present in any of the four source modules)
 
 `reasoning`, `reversal_conditions`, `instructions` were searched for across those four sources. None has them. This is the gap the project set out to close.
 
@@ -55,15 +55,15 @@ Confidence: geometric-mean analogue over Keys **necessary** to satisfy each matc
 - Does **not** execute. No callables on rules.
 - Does **not** persist. Fingerprint is recomputable; chain hash is δ's job.
 - Does **not** perform post-decision agent routing.
-- Does **not** reproduce OBSERVE risk fusion, entropy, or engine selection.
-- Does **not** substitute for PERCEIVE's six-gate consensus (observe-perceive still runs PERCEIVE).
+- Does **not** reproduce the source's risk fusion, entropy, or engine selection.
+- Does **not** substitute for PERCEIVE's six-gate consensus.
 - **Not thread-safe** (`DecisionRuleRegistry.register`).
 
 ## 4. Brutally Honest Current Status & Gaps
 
 | Gap | Detail |
 |---|---|
-| Not on live orchestrator path | observe-perceive `GovernanceOrchestrator` uses PERCEIVE + Conservation Kernel + `execution_guard`, not `DecisionEngine`. Dual decision path. |
+| Not on live decision path | Another component, in a separate private repository, takes live decisions without `DecisionEngine`. Dual decision path. |
 | Narrative templates | String templates, not a proof that reversal conditions are machine-checked later. δ obligations are a separate mechanism. |
 | Unpinned zeta git dependency | Default-branch drift. |
 | `decision: str` | Free-form. No closed vocabulary (`ESCALATE`/`HOLD`/`DISCHARGE` is convention, not schema). |
@@ -103,7 +103,6 @@ from beta import DecisionEngine, DecisionRule, DecisionRuleRegistry, Decision
                                       → δ.DecisionObligationTracker.open_for_decision
 ```
 
-Hub that does **not** import β: [`observe-perceive`](https://github.com/wking53214/observe-perceive).  
 Custody: [`interconnected_delta`](https://github.com/wking53214/interconnected_delta).
 
 Apache-2.0.
