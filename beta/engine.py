@@ -13,7 +13,7 @@ implementation's consensus evaluation (`math.prod(confidences) **
 (1/len(confidences))`) -- extracted faithfully for the case where there
 ARE triggering Keys to average. One deliberate deviation, not an
 extraction: that consensus evaluation returns confidence=0.0 when
-there's nothing to average ("no gates evaluated" is treated as a
+there's nothing to average (an empty evaluation is treated as a
 genuine error there).
 Here, a rule can legitimately match on absence of evidence alone (all
 its requirements are in closed_locks, no open_locks at all -- e.g. "safe
