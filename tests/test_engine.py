@@ -353,7 +353,7 @@ def test_fingerprint_differs_for_different_entity():
 
 
 def test_fingerprint_ignores_timestamp():
-    # Matches the source contract (observe_consolidated.py:236-244):
+    # Matches the original private implementation's contract:
     # decision_fingerprint is deliberately wall-clock-free.
     from datetime import timedelta
     lock_registry, keys, results = evaluate([Key(name="septic_shock", present=True)])

@@ -8,12 +8,13 @@ matched rule's locks' required_keys (from the registry) cross-referenced
 against which of those Keys are actually present (from the KeySet).
 LockResult itself carries no reference back to its required_keys.
 
-Confidence extends PERCEIVE's ConsensusEngine.evaluate geometric-mean
-approach (perceive_consolidated.py:502: `math.prod(confidences) **
+Confidence extends the geometric-mean approach of the original private
+implementation's consensus evaluation (`math.prod(confidences) **
 (1/len(confidences))`) -- extracted faithfully for the case where there
 ARE triggering Keys to average. One deliberate deviation, not an
-extraction: ConsensusEngine returns confidence=0.0 when there's nothing
-to average ("no gates evaluated" is treated as a genuine error there).
+extraction: that consensus evaluation returns confidence=0.0 when
+there's nothing to average ("no gates evaluated" is treated as a
+genuine error there).
 Here, a rule can legitimately match on absence of evidence alone (all
 its requirements are in closed_locks, no open_locks at all -- e.g. "safe
 to discharge" triggered by the ABSENCE of any danger Lock, not the
@@ -143,7 +144,7 @@ class DecisionEngine:
         # Which of those locks CHANGED state this evaluation (LockResult.changed)
         # -- the closest faithful analogue to the source's escalation_required
         # ("a NEW escalation this cycle," not "still in an escalated state
-        # from before"). Unlike the source's stateful EscalationPolicy dwell/
+        # from before"). Unlike the source's stateful escalation-policy dwell/
         # cooldown machinery, this doesn't require beta to hold any state of
         # its own -- zeta's LockResult already carries it.
         newly_triggered_locks = tuple(sorted(

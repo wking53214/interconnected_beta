@@ -7,8 +7,8 @@ narrative layer identified throughout this project as missing from the
 source entirely (see verdict.py's provenance notes).
 
 See beta/verdict.py, beta/rules.py, beta/engine.py, beta/fingerprint.py
-for what's extracted from the source (the FusedVerdict shape, reinvented
-three times; the decision_fingerprint algorithm; the ConsensusEngine
+for what's extracted from the source (the fused verdict shape, reinvented
+three times; the decision_fingerprint algorithm; the consensus
 confidence approach) versus what's new (the narrative fields, the
 declarative DecisionRule matching, the fail-closed treatment of
 unevaluated locks).

@@ -1,7 +1,7 @@
 """decision_fingerprint: reproducible hash of a decision's own inputs.
 
 Extracted verbatim (same algorithm, same wall-clock-free contract) from
-observe_consolidated.py:236-244. Deliberately separate from audit_hash,
+the original private implementation. Deliberately separate from audit_hash,
 which is the ledger's chained, tamper-evident hash and requires ledger
 state (the previous entry) that only exists once something is actually
 recorded -- interconnected_delta's job, not beta's. This fingerprint
