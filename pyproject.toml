@@ -3,6 +3,7 @@ name = "beta"
 version = "0.1.0"
 description = "Lock states + Keys -> a governed Decision with narrative (reasoning, reversals, instructions)."
 requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
 dependencies = [
     "zeta @ git+https://github.com/wking53214/interconnected_zeta",
 ]
