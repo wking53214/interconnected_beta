@@ -106,4 +106,14 @@ from beta import DecisionEngine, DecisionRule, DecisionRuleRegistry, Decision
 Hub that does **not** import β: [`observe-perceive`](https://github.com/wking53214/observe-perceive).  
 Custody: [`interconnected_delta`](https://github.com/wking53214/interconnected_delta).
 
+## Optional CNS connection
+
+beta does not need CNS. It has no runtime dependency on it, nothing in the package imports it when it loads, and the engine never touches it (`tests/test_cns_independence.py` checks this with CNS blocked). `beta/cns_connector.py` is the one place that knows CNS exists. Install it with `pip install 'beta[cns] @ git+https://github.com/wking53214/interconnected_beta'`; without CNS its functions raise `CnsNotInstalled` and nothing else changes.
+
+What it does is make a `Decision` **bindable**. `decision_content(decision)` returns the deterministic content of a Decision (every field except `audit_hash`, which a ledger stamps after the fact; the set-like lock and key tuples are sorted so order cannot change the digest), `decision_digest(decision)` is `cns.gate.subject_digest` over it, and `binds(result, decision)` says whether a `cns.gate.GateResult` was issued against exactly that Decision. A verdict about one Decision does not bind to another.
+
+It is **binding only**, and deliberately not a gate. There is no mapping from a Decision to `PASS`, `RETRY` or `TERMINAL_BREACH`: a Decision is a governed recommendation, and turning it into a gate outcome would invent a meaning beta does not have. Whoever issues a verdict about a Decision owns that meaning; this only lets them say which Decision it was about.
+
+The CNS digest is separate from `decision_fingerprint`, which is unchanged and unaware of CNS. The fingerprint hashes the inputs that produced a decision; the CNS digest binds the whole output, narrative and confidence included.
+
 Apache-2.0.
