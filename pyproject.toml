@@ -11,7 +11,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
 # Optional: lets a Decision be bound to a CNS verdict (beta.cns_connector). Nothing in beta imports CNS otherwise.
-cns = ["cns @ git+https://github.com/wking53214/CNS.git@v1.8.0"]
+cns = ["cns @ git+https://github.com/wking53214/CNS.git@v1.9.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
