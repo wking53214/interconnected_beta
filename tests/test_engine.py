@@ -97,6 +97,29 @@ def test_discharge_safe_when_all_danger_locks_closed():
     assert decision.confidence == 1.0
 
 
+def test_decide_rejects_lock_result_filed_under_another_lock_id():
+    lock_registry, keys, results = evaluate([
+        Key(name="septic_shock", present=True, confidence=0.95),
+    ])
+    engine = DecisionEngine(build_decision_registry(), lock_registry)
+    # File sepsis_lock's result under abnormal_vitals_lock's id.
+    mislabeled = dict(results)
+    mislabeled["abnormal_vitals_lock"] = results["sepsis_lock"]
+
+    with pytest.raises(ValueError, match="filed under its own lock id"):
+        engine.decide("patient1", keys, mislabeled, T0)
+
+
+def test_decide_rejects_non_datetime_timestamp():
+    lock_registry, keys, results = evaluate([
+        Key(name="septic_shock", present=True, confidence=0.95),
+    ])
+    engine = DecisionEngine(build_decision_registry(), lock_registry)
+
+    with pytest.raises(TypeError, match="timestamp must be a datetime"):
+        engine.decide("patient1", keys, results, "2026-01-01T12:00:00")
+
+
 def test_hold_when_abnormal_but_not_septic():
     lock_registry, keys, results = evaluate([
         Key(name="fever", present=True, confidence=0.9),

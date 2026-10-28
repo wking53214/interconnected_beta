@@ -121,6 +121,15 @@ class DecisionEngine:
         lock_results: Dict[str, LockResult],
         timestamp: datetime,
     ) -> Decision:
+        if not isinstance(timestamp, datetime):
+            raise TypeError(f"timestamp must be a datetime, got {type(timestamp).__name__}")
+        for lock_id, lock_result in lock_results.items():
+            if lock_result.lock_id != lock_id:
+                raise ValueError(
+                    f"lock_results[{lock_id!r}] carries a LockResult for {lock_result.lock_id!r}; "
+                    f"a lock result must be filed under its own lock id"
+                )
+
         rule = self._select_rule(lock_results)
 
         # Which specific Keys triggered this: only the Keys actually
