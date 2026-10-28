@@ -92,7 +92,11 @@ class Decision:
     timestamp: datetime
 
     # --- Extracted core (see field-mapping table above) ---
-    confidence: float  # geometric mean of the Keys necessary to satisfy the matched rule
+    # Geometric mean of the Keys necessary to satisfy the matched rule. For an
+    # absence-only match (no triggering Keys) the value is
+    # beta.engine.ABSENCE_CONFIDENCE and is not a calibrated probability;
+    # confidence_basis says which case applies.
+    confidence: float
     triggered_by_locks: Tuple[str, ...] = field(default_factory=tuple)
     triggered_by_keys: Tuple[str, ...] = field(default_factory=tuple)
     newly_triggered_locks: Tuple[str, ...] = field(default_factory=tuple)
@@ -103,3 +107,8 @@ class Decision:
     reasoning: str = ""
     reversal_conditions: Tuple[str, ...] = field(default_factory=tuple)
     instructions: str = ""
+
+    # "keys" when confidence averaged triggering Keys, "absence" when the
+    # matched rule contributed none. Not part of decision_fingerprint or
+    # the CNS digest, so existing digests are unchanged.
+    confidence_basis: str = "keys"

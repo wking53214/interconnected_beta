@@ -40,7 +40,10 @@ What the content holds, and what it leaves out
 Every field of a Decision is bound except ``audit_hash``, which is a pointer
 into a ledger that beta never fills (the ledger stage stamps it after the
 decision exists). Binding it would make a verdict stop matching merely because
-the decision was later recorded. The set-like fields (``triggered_by_locks``,
+the decision was later recorded. ``confidence_basis`` is not bound either: it
+is derived from fields that already are (an empty ``triggered_by_keys`` means
+an absence-only match), and leaving it out keeps every existing digest
+stable. The set-like fields (``triggered_by_locks``,
 ``triggered_by_keys``, ``newly_triggered_locks``) are sorted so order cannot
 change the digest. ``reversal_conditions`` keeps its order: it is authored
 narrative. ``confidence`` is rendered as a float, so ``1`` and ``1.0`` bind

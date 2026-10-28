@@ -95,6 +95,7 @@ def test_discharge_safe_when_all_danger_locks_closed():
     assert decision.decision == "DISCHARGE_SAFE"
     assert decision.triggered_by_keys == ()  # no positive evidence, absence-based
     assert decision.confidence == 1.0
+    assert decision.confidence_basis == "absence"
 
 
 def test_decide_rejects_lock_result_filed_under_another_lock_id():
@@ -118,6 +119,30 @@ def test_decide_rejects_non_datetime_timestamp():
 
     with pytest.raises(TypeError, match="timestamp must be a datetime"):
         engine.decide("patient1", keys, results, "2026-01-01T12:00:00")
+
+
+def test_absence_only_match_reports_absence_basis():
+    lock_registry, keys, results = evaluate([
+        Key(name="septic_shock", present=False),
+        Key(name="respiratory_distress", present=False),
+        Key(name="fever", present=False),
+        Key(name="tachycardia", present=False),
+    ])
+    engine = DecisionEngine(build_decision_registry(), lock_registry)
+    decision = engine.decide("patient1", keys, results, T0)
+
+    assert decision.confidence == 1.0 and decision.confidence_basis == "absence"
+
+
+def test_key_based_match_reports_keys_basis():
+    lock_registry, keys, results = evaluate([
+        Key(name="septic_shock", present=True, confidence=0.95),
+    ])
+    engine = DecisionEngine(build_decision_registry(), lock_registry)
+    decision = engine.decide("patient1", keys, results, T0)
+
+    assert decision.triggered_by_keys == ("septic_shock",)
+    assert decision.confidence_basis == "keys"
 
 
 def test_hold_when_abnormal_but_not_septic():
