@@ -45,6 +45,12 @@ from .rules import DecisionRule, DecisionRuleRegistry
 from .verdict import Decision
 
 
+# Confidence reported when a rule matches on absence alone (no triggering
+# Keys to average). A statement of a clean match, not a calibrated
+# probability; Decision.confidence_basis says when it was used.
+ABSENCE_CONFIDENCE = 1.0
+
+
 class NoMatchingRuleError(Exception):
     """No DecisionRule's requirements are satisfied by the current Lock state."""
 
@@ -59,7 +65,7 @@ class UnknownLockError(Exception):
 
 def _geometric_mean(confidences: List[float]) -> float:
     if not confidences:
-        return 1.0
+        return ABSENCE_CONFIDENCE
     return math.prod(confidences) ** (1.0 / len(confidences))
 
 
@@ -121,6 +127,15 @@ class DecisionEngine:
         lock_results: Dict[str, LockResult],
         timestamp: datetime,
     ) -> Decision:
+        if not isinstance(timestamp, datetime):
+            raise TypeError(f"timestamp must be a datetime, got {type(timestamp).__name__}")
+        for lock_id, lock_result in lock_results.items():
+            if lock_result.lock_id != lock_id:
+                raise ValueError(
+                    f"lock_results[{lock_id!r}] carries a LockResult for {lock_result.lock_id!r}; "
+                    f"a lock result must be filed under its own lock id"
+                )
+
         rule = self._select_rule(lock_results)
 
         # Which specific Keys triggered this: only the Keys actually
@@ -137,6 +152,7 @@ class DecisionEngine:
         sorted_keys = sorted(triggering_key_names)
         confidences = [keys.get(k).confidence for k in sorted_keys]
         confidence = _geometric_mean(confidences)
+        confidence_basis = "keys" if confidences else "absence"
 
         all_triggered_locks = tuple(sorted(set(rule.open_locks) | set(rule.closed_locks)))
 
@@ -178,4 +194,5 @@ class DecisionEngine:
             reasoning=reasoning,
             reversal_conditions=rule.reversal_conditions,
             instructions=rule.instructions,
+            confidence_basis=confidence_basis,
         )
