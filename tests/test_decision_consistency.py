@@ -141,3 +141,25 @@ def test_fingerprint_check_catches_altered_keys_with_a_stale_fingerprint():
 def test_fingerprint_check_refuses_an_empty_fingerprint():
     with pytest.raises(ValueError, match="no decision_fingerprint"):
         make().validate(check_fingerprint=True)
+
+
+# --- validate() judges the types too: a Decision with a str where a tuple belongs is not a Decision ---------------
+
+@pytest.mark.parametrize("field, bad", [
+    ("entity_id", None), ("entity_id", 7), ("decision_id", None), ("decision", b"ESCALATE"),
+    ("triggered_by_keys", "septic_shock"), ("triggered_by_locks", "sepsis_lock"), ("newly_triggered_locks", "x"),
+    ("triggered_by_keys", (1, 2)), ("reversal_conditions", "closes"), ("reasoning", b"bytes"), ("instructions", None),
+    ("decision_fingerprint", 5), ("timestamp", "2026-01-01"), ("timestamp", None),
+])
+def test_validate_refuses_a_field_of_the_wrong_type(field, bad):
+    over = {field: bad}
+    if field == "triggered_by_keys":
+        over["confidence_basis"] = ""  # let construction derive, so it is validate() that must refuse
+    with pytest.raises(ValueError, match=f"Decision.{field} must be"):
+        make(**over).validate()
+
+
+def test_validate_accepts_lists_for_the_tuple_fields_since_json_gives_lists():
+    d = make()
+    object.__setattr__(d, "triggered_by_locks", ["sepsis_lock"])
+    d.validate()

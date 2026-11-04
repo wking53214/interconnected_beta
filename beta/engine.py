@@ -63,6 +63,14 @@ class UnknownLockError(Exception):
     """A DecisionRule references a lock_id absent from the supplied LockRegistry."""
 
 
+class KeySetMismatchError(Exception):
+    """The lock results decide was given were evaluated from a different KeySet than the one it was given.
+
+    Fail closed: a Decision built from keys and lock results of different evidence reads as sound and is about
+    nobody's evidence (it can ESCALATE with no triggering Keys and full confidence).
+    """
+
+
 class StaleLockResultError(Exception):
     """A supplied LockResult was refused by zeta as stale, so it describes no new observation.
 
@@ -128,6 +136,35 @@ class DecisionEngine:
             )
         return top[0]
 
+    @staticmethod
+    def _check_lineage(keys: KeySet, lock_results: Dict[str, LockResult]) -> str:
+        """The fingerprint of the KeySet every lock result was evaluated from, or "" if none recorded one.
+
+        Raises KeySetMismatchError when a result recorded a different KeySet than the one given, or when only some
+        results recorded one (a half-bound run cannot be trusted either way).
+        """
+        recorded = {lid: lr.keyset_fingerprint for lid, lr in lock_results.items()}
+        if not any(recorded.values()):
+            return ""
+        unrecorded = sorted(lid for lid, fp in recorded.items() if not fp)
+        if unrecorded:
+            raise KeySetMismatchError(
+                "some lock results record a KeySet fingerprint and some do not "
+                f"(none recorded for: {', '.join(unrecorded)}); the run is half bound"
+            )
+        fingerprint = getattr(keys, "fingerprint", None)
+        if not callable(fingerprint):
+            raise KeySetMismatchError(
+                "the lock results record the KeySet they came from but this KeySet cannot fingerprint itself"
+            )
+        want = fingerprint()
+        foreign = sorted(lid for lid, fp in recorded.items() if fp != want)
+        if foreign:
+            raise KeySetMismatchError(
+                f"lock result(s) evaluated from a different KeySet than the one given: {', '.join(foreign)}"
+            )
+        return want
+
     def decide(
         self,
         entity_id: str,
@@ -150,6 +187,8 @@ class DecisionEngine:
                 f"zeta refused the observation behind lock result(s) as stale: {', '.join(stale)}; "
                 f"no Decision is made from a refused observation"
             )
+
+        keyset_fingerprint = self._check_lineage(keys, lock_results)
 
         rule = self._select_rule(lock_results)
 
@@ -210,4 +249,5 @@ class DecisionEngine:
             reversal_conditions=rule.reversal_conditions,
             instructions=rule.instructions,
             confidence_basis=confidence_basis,
+            keyset_fingerprint=keyset_fingerprint,
         )

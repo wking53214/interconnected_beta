@@ -80,10 +80,11 @@ INSTALL_HINT = "pip install 'beta[cns] @ git+https://github.com/wking53214/inter
 DECISION_SUBJECT = "beta.decision"
 
 # One pipeline run, named the same way by every stage's connector (CNS publishes the contract in
-# cns_composition.pipeline_context and holds the four copies to it). A plain mapping, so beta imports nothing.
+# cns_composition.spine_trace.context_problems, which the integration runner holds the four copies to). A plain
+# mapping, so beta imports nothing.
 CONTEXT_SCHEMA = "spine-context/1"
 _CONTEXT_FIELDS = ("schema", "entity_id", "event_id", "run_id")
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 class CnsNotInstalled(ImportError):
@@ -145,7 +146,7 @@ def _context(context: Any) -> Dict[str, str]:
 def _digest(value: Any, what: str) -> str:
     if not isinstance(value, str):
         raise TypeError(f"{what} must be a str digest; got {type(value).__name__}")
-    if not _SHA256.match(value):
+    if not _SHA256.fullmatch(value):
         raise ValueError(f"{what} is not a full lowercase SHA-256 digest")
     return value
 
@@ -179,6 +180,11 @@ def decision_content(
     ctx = _context(context)
     if keyset_digest is None or not lock_result_digests:
         raise ValueError("a context needs keyset_digest and lock_result_digests")
+    if not decision.keyset_fingerprint:
+        raise ValueError(
+            "the Decision records no KeySet fingerprint (its lock results recorded none, or it was built by hand), "
+            "so it cannot be bound to a KeySet"
+        )
     if not isinstance(lock_result_digests, Mapping):
         raise TypeError(f"lock_result_digests must be a mapping; got {type(lock_result_digests).__name__}")
     if decision.entity_id != ctx["entity_id"]:
@@ -198,6 +204,15 @@ def decision_content(
 
 
 def _decision_content(decision: Decision) -> Dict[str, Any]:
+    content = _core_content(decision)
+    # The KeySet this Decision's lock results were evaluated from, present only when decide recorded one, so the
+    # content (and digest) of a Decision made without it is exactly what it always was.
+    if decision.keyset_fingerprint:
+        content["keyset_fingerprint"] = _digest(decision.keyset_fingerprint, "Decision.keyset_fingerprint")
+    return content
+
+
+def _core_content(decision: Decision) -> Dict[str, Any]:
     return {
         "entity_id": decision.entity_id,
         "decision_id": decision.decision_id,
