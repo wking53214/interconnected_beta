@@ -124,3 +124,12 @@ def test_binds_checks_a_verdict_issued_against_the_run_bound_decision():
     assert binds(verdict, decision(), **lineage())
     assert not binds(verdict, decision())  # the lenient digest is a different binding
     assert not binds(verdict, decision(), **lineage(context={**CTX, "run_id": "run-2"}))
+
+
+@pytest.mark.parametrize("bad", ["a" * 64 + "\n", "a" * 64 + " ", " " + "a" * 64, "\n" + "a" * 64])
+def test_a_digest_with_trailing_or_leading_whitespace_is_refused(bad):
+    """re.match with `$` accepts a trailing newline, so a 65 character string passed as a full SHA-256."""
+    with pytest.raises(ValueError, match="full lowercase SHA-256"):
+        decision_content(decision(), **lineage(keyset_digest=bad))
+    with pytest.raises(ValueError, match="full lowercase SHA-256"):
+        decision_content(decision(), **lineage(lock_result_digests={"sepsis_lock": bad}))
