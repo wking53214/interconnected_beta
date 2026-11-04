@@ -57,13 +57,16 @@ Install with the extra:
 """
 
 import importlib
+import re
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from types import ModuleType
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .verdict import Decision
 
 __all__ = [
+    "CONTEXT_SCHEMA",
     "CnsNotInstalled",
     "DECISION_SUBJECT",
     "binds",
@@ -75,6 +78,12 @@ __all__ = [
 INSTALL_HINT = "pip install 'beta[cns] @ git+https://github.com/wking53214/interconnected_beta'"
 
 DECISION_SUBJECT = "beta.decision"
+
+# One pipeline run, named the same way by every stage's connector (CNS publishes the contract in
+# cns_composition.pipeline_context and holds the four copies to it). A plain mapping, so beta imports nothing.
+CONTEXT_SCHEMA = "spine-context/1"
+_CONTEXT_FIELDS = ("schema", "entity_id", "event_id", "run_id")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class CnsNotInstalled(ImportError):
@@ -117,15 +126,78 @@ def _number(value: Any, label: str) -> float:
     return float(value)
 
 
-def decision_content(decision: Decision) -> Dict[str, Any]:
+def _context(context: Any) -> Dict[str, str]:
+    """A validated copy of a pipeline context: exactly the four fields, all non-empty strings, a known schema."""
+    if not isinstance(context, Mapping):
+        raise TypeError(f"a pipeline context must be a mapping; got {type(context).__name__}")
+    if set(context) != set(_CONTEXT_FIELDS):
+        raise ValueError(f"a pipeline context has exactly the fields {list(_CONTEXT_FIELDS)}; got {sorted(map(str, context))}")
+    for name in _CONTEXT_FIELDS:
+        if not isinstance(context[name], str):
+            raise TypeError(f"context field {name} must be a str; got {type(context[name]).__name__}")
+        if not context[name]:
+            raise ValueError(f"context field {name} must be non-empty")
+    if context["schema"] != CONTEXT_SCHEMA:
+        raise ValueError(f"unsupported context schema {context['schema']!r}; this connector speaks {CONTEXT_SCHEMA!r}")
+    return {name: context[name] for name in _CONTEXT_FIELDS}
+
+
+def _digest(value: Any, what: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{what} must be a str digest; got {type(value).__name__}")
+    if not _SHA256.match(value):
+        raise ValueError(f"{what} is not a full lowercase SHA-256 digest")
+    return value
+
+
+def decision_content(
+    decision: Decision,
+    *,
+    context: Optional[Mapping] = None,
+    keyset_digest: Optional[str] = None,
+    lock_result_digests: Optional[Mapping] = None,
+) -> Dict[str, Any]:
     """The deterministic content a CNS verdict about ``decision`` is bound to.
 
     Only str, int, float, bool, None, list and dict with str keys, the types
     ``cns.gate.subject_digest`` accepts. Needs no CNS to build. Raises
     ``TypeError`` for anything that is not a :class:`beta.Decision`.
+
+    ``context``, ``keyset_digest`` and ``lock_result_digests`` bind the Decision to one pipeline run and to the
+    exact inputs it was made from. All three come together or not at all, and with them the content gains
+    ``context``, ``keyset_digest`` and ``lock_result_digests``; without them the content is exactly what it
+    always was. The Decision must be about the context's entity, and every lock it cites must have a lock-result
+    digest.
     """
     if not isinstance(decision, Decision):
         raise TypeError(f"expected a beta.Decision; got {type(decision).__name__}")
+    content = _decision_content(decision)
+    if context is None:
+        if keyset_digest is not None or lock_result_digests is not None:
+            raise ValueError("lineage digests need a context")
+        return content
+    ctx = _context(context)
+    if keyset_digest is None or not lock_result_digests:
+        raise ValueError("a context needs keyset_digest and lock_result_digests")
+    if not isinstance(lock_result_digests, Mapping):
+        raise TypeError(f"lock_result_digests must be a mapping; got {type(lock_result_digests).__name__}")
+    if decision.entity_id != ctx["entity_id"]:
+        raise ValueError(f"the Decision is about {decision.entity_id!r} but the context is about {ctx['entity_id']!r}")
+    locks = {}
+    for lock_id, digest in lock_result_digests.items():
+        if not isinstance(lock_id, str):
+            raise TypeError(f"a lock_result_digests key must be a str; got {type(lock_id).__name__}")
+        locks[lock_id] = _digest(digest, f"the lock result digest for {lock_id!r}")
+    missing = sorted(set(decision.triggered_by_locks) - set(locks))
+    if missing:
+        raise ValueError(f"the Decision cites lock(s) with no lock result digest: {', '.join(missing)}")
+    content["context"] = ctx
+    content["keyset_digest"] = _digest(keyset_digest, "keyset_digest")
+    content["lock_result_digests"] = {k: locks[k] for k in sorted(locks)}
+    return content
+
+
+def _decision_content(decision: Decision) -> Dict[str, Any]:
     return {
         "entity_id": decision.entity_id,
         "decision_id": decision.decision_id,
@@ -142,17 +214,18 @@ def decision_content(decision: Decision) -> Dict[str, Any]:
     }
 
 
-def decision_digest(decision: Decision) -> str:
+def decision_digest(decision: Decision, **run: Any) -> str:
     """``cns.gate.subject_digest`` of :func:`decision_content`.
 
     A separate binding from ``Decision.decision_fingerprint``, which is
-    untouched. Pass it, with ``DECISION_SUBJECT``, to ``GateResult.binds``.
+    untouched. Pass it, with ``DECISION_SUBJECT``, to ``GateResult.binds``. The keyword arguments are
+    :func:`decision_content`'s ``context``, ``keyset_digest`` and ``lock_result_digests``.
     """
-    content = decision_content(decision)
+    content = decision_content(decision, **run)
     return _cns_gate().subject_digest(content)
 
 
-def binds(result: Any, decision: Decision, *, subject: str = DECISION_SUBJECT) -> bool:
+def binds(result: Any, decision: Decision, *, subject: str = DECISION_SUBJECT, **run: Any) -> bool:
     """Whether ``result`` (a ``cns.gate.GateResult``) was issued against exactly ``decision``.
 
     False for a different decision, for a different ``subject`` label, and for
@@ -162,4 +235,4 @@ def binds(result: Any, decision: Decision, *, subject: str = DECISION_SUBJECT) -
     gate = _cns_gate()
     if not isinstance(result, gate.GateResult):
         raise TypeError(f"expected a cns.gate.GateResult; got {type(result).__name__}")
-    return bool(result.binds(subject, decision_digest(decision)))
+    return bool(result.binds(subject, decision_digest(decision, **run)))
