@@ -1,6 +1,6 @@
 # interconnected_beta (β)
 
-Lock states + Keys → a governed **Decision with narrative**. Version `0.1.0`. Depends on [`interconnected_zeta`](https://github.com/wking53214/interconnected_zeta). Python ≥ 3.9.
+Lock states + Keys → a governed **Decision with narrative**. Version `0.1.0`. Depends on [`interconnected_zeta`](https://github.com/wking53214/interconnected_zeta). Python ≥ 3.10.
 
 ## 1. Pipeline Position & Role
 
