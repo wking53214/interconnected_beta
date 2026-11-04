@@ -79,6 +79,7 @@ close (see interconnected_zeta and interconnected_alpha's own
 provenance notes on "the why problem"), not an extraction.
 """
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Tuple
@@ -110,5 +111,55 @@ class Decision:
 
     # "keys" when confidence averaged triggering Keys, "absence" when the
     # matched rule contributed none. Not part of decision_fingerprint or
-    # the CNS digest, so existing digests are unchanged.
-    confidence_basis: str = "keys"
+    # the CNS digest, so existing digests are unchanged. It is derived from
+    # triggered_by_keys, and because no digest sees it, it must never be wrong:
+    # "" (the default) means "derive it", and a value that contradicts the keys
+    # is refused at construction and by validate().
+    confidence_basis: str = ""
+
+    def __post_init__(self) -> None:
+        expected = self._derived_basis()
+        if self.confidence_basis == "":
+            object.__setattr__(self, "confidence_basis", expected)
+        elif self.confidence_basis != expected:
+            raise ValueError(
+                f"Decision.confidence_basis is {self.confidence_basis!r} but "
+                f"triggered_by_keys implies {expected!r}"
+            )
+
+    def _derived_basis(self) -> str:
+        return "keys" if self.triggered_by_keys else "absence"
+
+    def validate(self, *, check_fingerprint: bool = False) -> None:
+        """Raise ValueError unless this Decision is internally consistent.
+
+        __post_init__ does not run for a Decision that is unpickled or built with
+        object.__new__, so a recorder calls this at its boundary. Checks the basis
+        against the keys and that confidence is a finite number in [0, 1]. With
+        check_fingerprint=True it also recomputes decision_fingerprint from the
+        Decision's own fields; that is opt in because a fingerprint is only
+        meaningful for a Decision the engine produced.
+        """
+        c = self.confidence
+        if isinstance(c, bool) or not isinstance(c, (int, float)) or not math.isfinite(c) or not (0.0 <= c <= 1.0):
+            raise ValueError(f"Decision.confidence must be a finite number in [0, 1]; got {c!r}")
+        expected = self._derived_basis()
+        if self.confidence_basis != expected:
+            raise ValueError(
+                f"Decision.confidence_basis is {self.confidence_basis!r} but "
+                f"triggered_by_keys implies {expected!r}"
+            )
+        if check_fingerprint:
+            if not self.decision_fingerprint:
+                raise ValueError("Decision has no decision_fingerprint to check")
+            from .fingerprint import decision_fingerprint
+
+            want = decision_fingerprint({
+                "entity_id": self.entity_id,
+                "decision_id": self.decision_id,
+                "decision": self.decision,
+                "triggered_by_locks": list(self.triggered_by_locks),
+                "triggered_by_keys": list(self.triggered_by_keys),
+            })
+            if self.decision_fingerprint != want:
+                raise ValueError("Decision.decision_fingerprint does not match the Decision's own fields")

@@ -63,6 +63,14 @@ class UnknownLockError(Exception):
     """A DecisionRule references a lock_id absent from the supplied LockRegistry."""
 
 
+class StaleLockResultError(Exception):
+    """A supplied LockResult was refused by zeta as stale, so it describes no new observation.
+
+    Fail closed: a stale result carries the unchanged earlier lock state, and a Decision built on it would read
+    as a fresh judgement of readings zeta declined to apply. The caller decides whether to retry.
+    """
+
+
 def _geometric_mean(confidences: List[float]) -> float:
     if not confidences:
         return ABSENCE_CONFIDENCE
@@ -135,6 +143,13 @@ class DecisionEngine:
                     f"lock_results[{lock_id!r}] carries a LockResult for {lock_result.lock_id!r}; "
                     f"a lock result must be filed under its own lock id"
                 )
+
+        stale = sorted(lock_id for lock_id, lock_result in lock_results.items() if lock_result.stale)
+        if stale:
+            raise StaleLockResultError(
+                f"zeta refused the observation behind lock result(s) as stale: {', '.join(stale)}; "
+                f"no Decision is made from a refused observation"
+            )
 
         rule = self._select_rule(lock_results)
 

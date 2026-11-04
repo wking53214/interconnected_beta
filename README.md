@@ -65,10 +65,17 @@ Confidence: geometric-mean analogue over Keys **necessary** to satisfy each matc
 |---|---|
 | Not on live orchestrator path | observe-perceive `GovernanceOrchestrator` uses PERCEIVE + Conservation Kernel + `execution_guard`, not `DecisionEngine`. Dual decision path. |
 | Narrative templates | String templates, not a proof that reversal conditions are machine-checked later. δ obligations are a separate mechanism. |
-| Unpinned zeta git dependency | Default-branch drift. |
+| Git dependency | `zeta` is pinned by commit in `pyproject.toml` (`tests/test_zeta_pin.py` holds the pin), so moving it is a reviewed change. It is a git dependency, not on a package index. |
+| Inputs are trusted | `decide(entity_id, keys, lock_results, timestamp)` takes its arguments independently and does not check that the lock results were evaluated from those keys, for that entity, or at that time. That is checked when the Decision is bound (`context`, below) and by CNS's strict trace. |
 | `decision: str` | Free-form. No closed vocabulary (`ESCALATE`/`HOLD`/`DISCHARGE` is convention, not schema). |
 | No identity / actor | `entity_id` is a string. No actor registry. |
 | Stateless engine | Cannot itself debounce. Relies on ζ. If caller bypasses ζ and feeds synthetic `LockResult`s, β will decide. |
+
+### Decision consistency and stale input
+
+- `Decision.confidence_basis` is derived from `triggered_by_keys` (`"keys"` when there are any, `"absence"` when there are none). It is left out of every digest, so it must never be wrong: the default `""` derives it, a value that contradicts the keys raises `ValueError` at construction, and `Decision.validate()` re-checks it (and that `confidence` is a finite number in [0, 1]) for a Decision that skipped `__post_init__` (unpickled, `object.__new__`). `validate(check_fingerprint=True)` also recomputes `decision_fingerprint`. Construction itself checks only the basis. δ calls `validate()` before it records anything. `dataclasses.replace` on a Decision that changes `triggered_by_keys` must pass `confidence_basis=""` to re-derive.
+- `decide` raises `StaleLockResultError` when any supplied `LockResult` has `stale=True`, naming the locks: zeta refused that observation, so no Decision is made from it. Retrying is the caller's.
+- A frozen dataclass is not a security boundary: `object.__setattr__` can still change a Decision in memory. The recording boundary re-validates; in-process use is not protected.
 
 36 tests. `pip install -e ".[dev]" && pytest`.
 
@@ -111,6 +118,8 @@ Custody: [`interconnected_delta`](https://github.com/wking53214/interconnected_d
 beta does not need CNS. It has no runtime dependency on it, nothing in the package imports it when it loads, and the engine never touches it (`tests/test_cns_independence.py` checks this with CNS blocked). `beta/cns_connector.py` is the one place that knows CNS exists. Install it with `pip install 'beta[cns] @ git+https://github.com/wking53214/interconnected_beta'`; without CNS its functions raise `CnsNotInstalled` and nothing else changes.
 
 What it does is make a `Decision` **bindable**. `decision_content(decision)` returns the deterministic content of a Decision (every field except `audit_hash`, which a ledger stamps after the fact; the set-like lock and key tuples are sorted so order cannot change the digest), `decision_digest(decision)` is `cns.gate.subject_digest` over it, and `binds(result, decision)` says whether a `cns.gate.GateResult` was issued against exactly that Decision. A verdict about one Decision does not bind to another.
+
+**Binding a Decision to a run.** Pass `context=` (exactly `schema` `"spine-context/1"`, `entity_id`, `event_id`, `run_id`, all non-empty strings), `keyset_digest=` and `lock_result_digests=` (lock id to digest) to `decision_content`, `decision_digest` or `binds`; all three or none. The Decision must be about the context's entity and every lock it cites must have a lock-result digest, or the connector raises. The content gains `context`, `keyset_digest` and `lock_result_digests`. Without them every existing digest is unchanged.
 
 It is **binding only**, and deliberately not a gate. There is no mapping from a Decision to `PASS`, `RETRY` or `TERMINAL_BREACH`: a Decision is a governed recommendation, and turning it into a gate outcome would invent a meaning beta does not have. Whoever issues a verdict about a Decision owns that meaning; this only lets them say which Decision it was about.
 
