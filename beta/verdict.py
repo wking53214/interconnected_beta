@@ -135,11 +135,21 @@ class Decision:
 
         __post_init__ does not run for a Decision that is unpickled or built with
         object.__new__, so a recorder calls this at its boundary. Checks the basis
-        against the keys and that confidence is a finite number in [0, 1]. With
+        against the keys, that every field has its type (a str where a tuple belongs would otherwise be recorded as
+        its characters), and that confidence is a finite number in [0, 1]. With
         check_fingerprint=True it also recomputes decision_fingerprint from the
         Decision's own fields; that is opt in because a fingerprint is only
         meaningful for a Decision the engine produced.
         """
+        for name in ("entity_id", "decision_id", "decision", "decision_fingerprint", "reasoning", "instructions"):
+            if not isinstance(getattr(self, name), str):
+                raise ValueError(f"Decision.{name} must be a str; got {type(getattr(self, name)).__name__}")
+        for name in ("triggered_by_locks", "triggered_by_keys", "newly_triggered_locks", "reversal_conditions"):
+            value = getattr(self, name)
+            if not isinstance(value, (tuple, list)) or not all(isinstance(item, str) for item in value):
+                raise ValueError(f"Decision.{name} must be a tuple of str; got {value!r}")
+        if not isinstance(self.timestamp, datetime):
+            raise ValueError(f"Decision.timestamp must be a datetime; got {type(self.timestamp).__name__}")
         c = self.confidence
         if isinstance(c, bool) or not isinstance(c, (int, float)) or not math.isfinite(c) or not (0.0 <= c <= 1.0):
             raise ValueError(f"Decision.confidence must be a finite number in [0, 1]; got {c!r}")
