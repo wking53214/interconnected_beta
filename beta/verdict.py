@@ -80,6 +80,7 @@ provenance notes on "the why problem"), not an extraction.
 """
 
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Tuple
@@ -117,6 +118,12 @@ class Decision:
     # is refused at construction and by validate().
     confidence_basis: str = ""
 
+    # Fingerprint (zeta's KeySet.fingerprint) of the KeySet the lock results this Decision rests on were evaluated
+    # from, set by DecisionEngine.decide when every result recorded one and it matched the KeySet decide was given.
+    # "" means the Decision is unbound to a KeySet (hand-built lock results, or an older zeta). Not part of
+    # decision_fingerprint, so existing fingerprints are unchanged.
+    keyset_fingerprint: str = ""
+
     def __post_init__(self) -> None:
         expected = self._derived_basis()
         if self.confidence_basis == "":
@@ -150,6 +157,9 @@ class Decision:
                 raise ValueError(f"Decision.{name} must be a tuple of str; got {value!r}")
         if not isinstance(self.timestamp, datetime):
             raise ValueError(f"Decision.timestamp must be a datetime; got {type(self.timestamp).__name__}")
+        fp = self.keyset_fingerprint
+        if not isinstance(fp, str) or (fp and not re.fullmatch(r"[0-9a-f]{64}", fp)):
+            raise ValueError(f"Decision.keyset_fingerprint must be empty or a full lowercase SHA-256; got {fp!r}")
         c = self.confidence
         if isinstance(c, bool) or not isinstance(c, (int, float)) or not math.isfinite(c) or not (0.0 <= c <= 1.0):
             raise ValueError(f"Decision.confidence must be a finite number in [0, 1]; got {c!r}")

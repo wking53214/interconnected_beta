@@ -30,7 +30,7 @@ def d(label):
 def decision(**over):
     base = dict(entity_id="p1", decision_id="r", decision="ESCALATE", timestamp=T0, confidence=0.9,
                 triggered_by_locks=("sepsis_lock",), triggered_by_keys=("septic_shock",),
-                decision_fingerprint="f" * 64)
+                decision_fingerprint="f" * 64, keyset_fingerprint="c" * 64)
     base.update(over)
     return Decision(**base)
 
@@ -133,3 +133,22 @@ def test_a_digest_with_trailing_or_leading_whitespace_is_refused(bad):
         decision_content(decision(), **lineage(keyset_digest=bad))
     with pytest.raises(ValueError, match="full lowercase SHA-256"):
         decision_content(decision(), **lineage(lock_result_digests={"sepsis_lock": bad}))
+
+
+# --- the KeySet fingerprint is bound, and a Decision that records none cannot be bound to a run -----------------
+
+def test_a_decision_with_a_keyset_fingerprint_carries_it_in_its_content():
+    content = decision_content(decision())
+    assert content["keyset_fingerprint"] == "c" * 64
+    assert "keyset_fingerprint" not in decision_content(decision(keyset_fingerprint=""))  # legacy content unchanged
+
+
+def test_a_decision_that_records_no_keyset_fingerprint_is_refused_under_a_context():
+    with pytest.raises(ValueError, match="records no KeySet fingerprint"):
+        decision_content(decision(keyset_fingerprint=""), **lineage())
+
+
+def test_the_fingerprint_is_part_of_what_the_digest_binds():
+    a = decision_digest(decision(), **lineage())
+    b = decision_digest(decision(keyset_fingerprint="d" * 64), **lineage())
+    assert a != b
