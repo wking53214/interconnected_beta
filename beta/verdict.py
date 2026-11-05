@@ -125,6 +125,11 @@ class Decision:
     keyset_fingerprint: str = ""
 
     def __post_init__(self) -> None:
+        # A list given for a tuple field becomes a tuple, so later mutation of the caller's list cannot reach a
+        # frozen Decision. Only a real list is converted; anything else is left for validate() to judge.
+        for name in ("triggered_by_locks", "triggered_by_keys", "newly_triggered_locks", "reversal_conditions"):
+            if isinstance(getattr(self, name), list):
+                object.__setattr__(self, name, tuple(getattr(self, name)))
         expected = self._derived_basis()
         if self.confidence_basis == "":
             object.__setattr__(self, "confidence_basis", expected)
@@ -161,7 +166,13 @@ class Decision:
         if not isinstance(fp, str) or (fp and not re.fullmatch(r"[0-9a-f]{64}", fp)):
             raise ValueError(f"Decision.keyset_fingerprint must be empty or a full lowercase SHA-256; got {fp!r}")
         c = self.confidence
-        if isinstance(c, bool) or not isinstance(c, (int, float)) or not math.isfinite(c) or not (0.0 <= c <= 1.0):
+        try:
+            bad_confidence = (
+                isinstance(c, bool) or not isinstance(c, (int, float)) or not math.isfinite(c) or not (0.0 <= c <= 1.0)
+            )
+        except (OverflowError, TypeError):  # an int too large for a float, or a subclass that refuses comparison
+            bad_confidence = True
+        if bad_confidence:
             raise ValueError(f"Decision.confidence must be a finite number in [0, 1]; got {c!r}")
         expected = self._derived_basis()
         if self.confidence_basis != expected:
