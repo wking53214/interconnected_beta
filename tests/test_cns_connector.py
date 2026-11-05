@@ -142,6 +142,7 @@ BOUND_CHANGES = {
     "reversal_conditions": ("sepsis_lock closes",),
     "instructions": "Do something else.",
     "keyset_fingerprint": "a" * 64,
+    "content_fingerprint": "e" * 64,
 }
 NOT_BOUND = {"audit_hash", "confidence_basis"}
 
@@ -149,7 +150,9 @@ NOT_BOUND = {"audit_hash", "confidence_basis"}
 def test_every_decision_field_is_either_bound_or_deliberately_not():
     names = {f.name for f in dataclasses.fields(Decision)}
     assert names == set(BOUND_CHANGES) | NOT_BOUND
-    assert set(decision_content(Decision("e", "d", "x", T0, 1.0, keyset_fingerprint="b" * 64))) == set(BOUND_CHANGES)
+    assert set(decision_content(Decision("e", "d", "x", T0, 1.0, keyset_fingerprint="b" * 64))) == (
+        set(BOUND_CHANGES) - {"content_fingerprint"}
+    )
 
 
 @pytest.mark.parametrize("name", sorted(BOUND_CHANGES))

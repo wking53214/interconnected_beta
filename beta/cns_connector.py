@@ -211,6 +211,9 @@ def _decision_content(decision: Decision) -> Dict[str, Any]:
     # content (and digest) of a Decision made without it is exactly what it always was.
     if decision.keyset_fingerprint:
         content["keyset_fingerprint"] = _digest(decision.keyset_fingerprint, "Decision.keyset_fingerprint")
+    # Present only when set, like keyset_fingerprint, so a legacy Decision's content and digest are unchanged.
+    if decision.content_fingerprint:
+        content["content_fingerprint"] = _digest(decision.content_fingerprint, "Decision.content_fingerprint")
     return content
 
 

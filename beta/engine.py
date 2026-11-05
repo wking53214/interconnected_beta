@@ -35,12 +35,13 @@ though the zero-confidence Key wasn't needed to open it at all):
 """
 
 import math
+import dataclasses
 from datetime import datetime
 from typing import Dict, List, Set
 
 from zeta import Combination, KeySet, LockRegistry, LockResult, LockSpec
 
-from .fingerprint import decision_fingerprint
+from .fingerprint import content_fingerprint, decision_fingerprint
 from .rules import DecisionRule, DecisionRuleRegistry
 from .verdict import Decision
 
@@ -235,7 +236,7 @@ class DecisionEngine:
             "triggered_by_keys": sorted_keys,
         })
 
-        return Decision(
+        decision = Decision(
             entity_id=entity_id,
             decision_id=rule.decision_id,
             decision=rule.decision,
@@ -251,3 +252,4 @@ class DecisionEngine:
             confidence_basis=confidence_basis,
             keyset_fingerprint=keyset_fingerprint,
         )
+        return dataclasses.replace(decision, content_fingerprint=content_fingerprint(decision))

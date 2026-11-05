@@ -124,6 +124,12 @@ class Decision:
     # decision_fingerprint, so existing fingerprints are unchanged.
     keyset_fingerprint: str = ""
 
+    # SHA-256 over the 13 fields beta.fingerprint.canonical_decision lists (domain "beta-decision-content/1"), set by
+    # DecisionEngine.decide. "" means a legacy or hand-built Decision that records none. Unlike decision_fingerprint
+    # (5 inputs, unchanged) it covers the narrative, confidence, timestamp and lineage. Keyless: it catches a partial
+    # edit, not a forger who recomputes it.
+    content_fingerprint: str = ""
+
     def __post_init__(self) -> None:
         # A list given for a tuple field becomes a tuple, so later mutation of the caller's list cannot reach a
         # frozen Decision. Only a real list is converted; anything else is left for validate() to judge.
@@ -153,7 +159,8 @@ class Decision:
         Decision's own fields; that is opt in because a fingerprint is only
         meaningful for a Decision the engine produced.
         """
-        for name in ("entity_id", "decision_id", "decision", "decision_fingerprint", "reasoning", "instructions"):
+        for name in ("entity_id", "decision_id", "decision", "decision_fingerprint", "reasoning", "instructions",
+                     "content_fingerprint"):
             if not isinstance(getattr(self, name), str):
                 raise ValueError(f"Decision.{name} must be a str; got {type(getattr(self, name)).__name__}")
         for name in ("triggered_by_locks", "triggered_by_keys", "newly_triggered_locks", "reversal_conditions"):
@@ -194,3 +201,8 @@ class Decision:
             })
             if self.decision_fingerprint != want:
                 raise ValueError("Decision.decision_fingerprint does not match the Decision's own fields")
+            if self.content_fingerprint:  # empty is a legacy Decision: accepted
+                from .fingerprint import content_fingerprint
+
+                if self.content_fingerprint != content_fingerprint(self):
+                    raise ValueError("Decision.content_fingerprint does not match the Decision's own fields")
