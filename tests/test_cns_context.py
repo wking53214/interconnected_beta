@@ -152,3 +152,35 @@ def test_the_fingerprint_is_part_of_what_the_digest_binds():
     a = decision_digest(decision(), **lineage())
     b = decision_digest(decision(keyset_fingerprint="d" * 64), **lineage())
     assert a != b
+
+
+def test_a_context_is_snapshotted_once_so_later_reads_never_reach_the_copy():
+    from collections.abc import Mapping
+
+    class Shifting(Mapping):
+        def __init__(self):
+            self.reads = 0
+
+        def __iter__(self):
+            return iter(CTX)
+
+        def __len__(self):
+            return len(CTX)
+
+        def __getitem__(self, key):
+            self.reads += 1
+            # the first full pass (dict(context)) sees CTX; any later read would see a different run
+            return CTX[key] if self.reads <= len(CTX) else "later-" + key
+
+    content = decision_content(decision(), **lineage(context=Shifting()))
+    assert content["context"] == CTX
+
+
+def test_a_str_subclass_in_a_context_field_is_refused():
+    class Sneaky(str):
+        pass
+
+    with pytest.raises(TypeError, match="context field run_id must be a str; got Sneaky"):
+        decision_content(decision(), **lineage(context={**CTX, "run_id": Sneaky("run-1")}))
+    with pytest.raises(TypeError, match="context field schema must be a str"):
+        decision_content(decision(), **lineage(context={**CTX, "schema": Sneaky(CONTEXT_SCHEMA)}))
