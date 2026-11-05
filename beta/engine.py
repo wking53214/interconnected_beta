@@ -35,12 +35,13 @@ though the zero-confidence Key wasn't needed to open it at all):
 """
 
 import math
+import dataclasses
 from datetime import datetime
 from typing import Dict, List, Set
 
 from zeta import Combination, KeySet, LockRegistry, LockResult, LockSpec
 
-from .fingerprint import decision_fingerprint
+from .fingerprint import content_fingerprint, decision_fingerprint
 from .rules import DecisionRule, DecisionRuleRegistry
 from .verdict import Decision
 
@@ -57,6 +58,14 @@ class NoMatchingRuleError(Exception):
 
 class AmbiguousRuleError(Exception):
     """More than one DecisionRule matched at the same (highest) priority."""
+
+
+class EntityMismatchError(ValueError):
+    """A lock result records an entity other than the one decide was asked about.
+
+    Fail closed: another entity's lock states under this entity's id would read as this entity's evidence. A
+    result that records no entity (hand-built, or from an older zeta) is accepted, as before.
+    """
 
 
 class UnknownLockError(Exception):
@@ -181,6 +190,16 @@ class DecisionEngine:
                     f"a lock result must be filed under its own lock id"
                 )
 
+        foreign = sorted(
+            (lock_id, lock_result.entity_id) for lock_id, lock_result in lock_results.items()
+            if getattr(lock_result, "entity_id", "") and lock_result.entity_id != entity_id
+        )
+        if foreign:
+            raise EntityMismatchError(
+                f"decide was asked about entity {entity_id!r} but lock result(s) record another entity: "
+                + ", ".join(f"{lock_id} is about {other!r}" for lock_id, other in foreign)
+            )
+
         stale = sorted(lock_id for lock_id, lock_result in lock_results.items() if lock_result.stale)
         if stale:
             raise StaleLockResultError(
@@ -235,7 +254,7 @@ class DecisionEngine:
             "triggered_by_keys": sorted_keys,
         })
 
-        return Decision(
+        decision = Decision(
             entity_id=entity_id,
             decision_id=rule.decision_id,
             decision=rule.decision,
@@ -251,3 +270,4 @@ class DecisionEngine:
             confidence_basis=confidence_basis,
             keyset_fingerprint=keyset_fingerprint,
         )
+        return dataclasses.replace(decision, content_fingerprint=content_fingerprint(decision))
