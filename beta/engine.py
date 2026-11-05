@@ -60,6 +60,14 @@ class AmbiguousRuleError(Exception):
     """More than one DecisionRule matched at the same (highest) priority."""
 
 
+class EntityMismatchError(ValueError):
+    """A lock result records an entity other than the one decide was asked about.
+
+    Fail closed: another entity's lock states under this entity's id would read as this entity's evidence. A
+    result that records no entity (hand-built, or from an older zeta) is accepted, as before.
+    """
+
+
 class UnknownLockError(Exception):
     """A DecisionRule references a lock_id absent from the supplied LockRegistry."""
 
@@ -181,6 +189,16 @@ class DecisionEngine:
                     f"lock_results[{lock_id!r}] carries a LockResult for {lock_result.lock_id!r}; "
                     f"a lock result must be filed under its own lock id"
                 )
+
+        foreign = sorted(
+            (lock_id, lock_result.entity_id) for lock_id, lock_result in lock_results.items()
+            if getattr(lock_result, "entity_id", "") and lock_result.entity_id != entity_id
+        )
+        if foreign:
+            raise EntityMismatchError(
+                f"decide was asked about entity {entity_id!r} but lock result(s) record another entity: "
+                + ", ".join(f"{lock_id} is about {other!r}" for lock_id, other in foreign)
+            )
 
         stale = sorted(lock_id for lock_id, lock_result in lock_results.items() if lock_result.stale)
         if stale:

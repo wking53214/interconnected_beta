@@ -395,8 +395,12 @@ def test_fingerprint_differs_for_different_entity():
     lock_registry, keys, results = evaluate([Key(name="septic_shock", present=True)])
     engine = DecisionEngine(build_decision_registry(), lock_registry)
 
+    import dataclasses
+
+    # decide now refuses lock results about another entity, so patient2's results are patient2's own
+    results2 = {k: dataclasses.replace(v, entity_id="patient2") for k, v in results.items()}
     d1 = engine.decide("patient1", keys, results, T0)
-    d2 = engine.decide("patient2", keys, results, T0)
+    d2 = engine.decide("patient2", keys, results2, T0)
     assert d1.decision_fingerprint != d2.decision_fingerprint
 
 

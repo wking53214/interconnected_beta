@@ -16,7 +16,7 @@ unevaluated locks).
 
 from .verdict import Decision
 from .rules import DecisionRule, DecisionRuleRegistry
-from .engine import DecisionEngine, NoMatchingRuleError, AmbiguousRuleError, KeySetMismatchError, StaleLockResultError
+from .engine import DecisionEngine, EntityMismatchError, NoMatchingRuleError, AmbiguousRuleError, KeySetMismatchError, StaleLockResultError
 from .fingerprint import canonical_decision, content_fingerprint, decision_fingerprint
 
 __all__ = [
@@ -24,6 +24,7 @@ __all__ = [
     "DecisionRule",
     "DecisionRuleRegistry",
     "DecisionEngine",
+    "EntityMismatchError",
     "NoMatchingRuleError",
     "AmbiguousRuleError",
     "KeySetMismatchError",
