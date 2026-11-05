@@ -153,29 +153,30 @@ class Decision:
 
         __post_init__ does not run for a Decision that is unpickled or built with
         object.__new__, so a recorder calls this at its boundary. Checks the basis
-        against the keys, that every field has its type (a str where a tuple belongs would otherwise be recorded as
-        its characters), and that confidence is a finite number in [0, 1]. With
+        against the keys, that every field has exactly its type (a str where a tuple belongs would otherwise be
+        recorded as its characters, and a str, float or datetime subclass can print one value while holding another,
+        so subclasses and bool are refused), and that confidence is a finite number in [0, 1]. With
         check_fingerprint=True it also recomputes decision_fingerprint from the
         Decision's own fields; that is opt in because a fingerprint is only
         meaningful for a Decision the engine produced.
         """
         for name in ("entity_id", "decision_id", "decision", "decision_fingerprint", "reasoning", "instructions",
-                     "content_fingerprint"):
-            if not isinstance(getattr(self, name), str):
+                     "content_fingerprint", "keyset_fingerprint"):
+            if type(getattr(self, name)) is not str:
                 raise ValueError(f"Decision.{name} must be a str; got {type(getattr(self, name)).__name__}")
         for name in ("triggered_by_locks", "triggered_by_keys", "newly_triggered_locks", "reversal_conditions"):
             value = getattr(self, name)
-            if not isinstance(value, (tuple, list)) or not all(isinstance(item, str) for item in value):
+            if type(value) not in (tuple, list) or not all(type(item) is str for item in value):
                 raise ValueError(f"Decision.{name} must be a tuple of str; got {value!r}")
-        if not isinstance(self.timestamp, datetime):
+        if type(self.timestamp) is not datetime:
             raise ValueError(f"Decision.timestamp must be a datetime; got {type(self.timestamp).__name__}")
         fp = self.keyset_fingerprint
-        if not isinstance(fp, str) or (fp and not re.fullmatch(r"[0-9a-f]{64}", fp)):
+        if fp and not re.fullmatch(r"[0-9a-f]{64}", fp):
             raise ValueError(f"Decision.keyset_fingerprint must be empty or a full lowercase SHA-256; got {fp!r}")
         c = self.confidence
         try:
             bad_confidence = (
-                isinstance(c, bool) or not isinstance(c, (int, float)) or not math.isfinite(c) or not (0.0 <= c <= 1.0)
+                type(c) not in (int, float) or not math.isfinite(c) or not (0.0 <= c <= 1.0)
             )
         except (OverflowError, TypeError):  # an int too large for a float, or a subclass that refuses comparison
             bad_confidence = True
