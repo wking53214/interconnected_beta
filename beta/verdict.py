@@ -161,7 +161,7 @@ class Decision:
         meaningful for a Decision the engine produced.
         """
         for name in ("entity_id", "decision_id", "decision", "decision_fingerprint", "reasoning", "instructions",
-                     "content_fingerprint", "keyset_fingerprint"):
+                     "content_fingerprint", "keyset_fingerprint", "confidence_basis", "audit_hash"):
             if type(getattr(self, name)) is not str:
                 raise ValueError(f"Decision.{name} must be a str; got {type(getattr(self, name)).__name__}")
         for name in ("triggered_by_locks", "triggered_by_keys", "newly_triggered_locks", "reversal_conditions"):
