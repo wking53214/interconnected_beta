@@ -270,4 +270,8 @@ class DecisionEngine:
             confidence_basis=confidence_basis,
             keyset_fingerprint=keyset_fingerprint,
         )
-        return dataclasses.replace(decision, content_fingerprint=content_fingerprint(decision))
+        # A rule or Key configured with a str or float subclass must not come out as a valid Decision.
+        decision.validate()
+        decision = dataclasses.replace(decision, content_fingerprint=content_fingerprint(decision))
+        decision.validate(check_fingerprint=True)
+        return decision

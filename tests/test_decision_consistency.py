@@ -201,3 +201,33 @@ def test_a_confidence_whose_comparison_raises_type_error_is_a_value_error():
 
     with pytest.raises(ValueError, match="confidence must be a finite number in"):
         make(confidence=Grumpy(0.5)).validate()
+
+
+def test_an_escalate_on_a_latched_open_lock_reports_absence_basis_and_full_confidence():
+    """README: "absence" means no triggering Keys now, not "matched on closed locks only". A lock latched open by
+    zeta's cooldown stays open while the Keys have gone away, so the rule matches on an OPEN lock and decide()
+    returns confidence 1.0, basis "absence", no keys. The rule logic is unchanged; the README states this."""
+    locks = LockRegistry([LockSpec(
+        lock_id="sepsis_lock", required_keys=("septic_shock",), combination=Combination.OR,
+        force=True, lock_seconds=3600,
+    )])
+    rules = DecisionRuleRegistry([
+        DecisionRule(decision_id="escalate", decision="ESCALATE", open_locks=("sepsis_lock",), priority=10),
+        DecisionRule(decision_id="safe", decision="SAFE", closed_locks=("sepsis_lock",), priority=0),
+    ])
+    evaluator = LockEvaluator(locks)
+    engine = DecisionEngine(rules, locks)
+    sick = KeySet([Key(name="septic_shock", present=True, confidence=0.8)])
+    well = KeySet([Key(name="septic_shock", present=False)])
+    first = engine.decide("p1", sick, evaluator.evaluate_all("p1", sick, T0), T0)
+    assert first.confidence_basis == "keys"
+
+    later = T0.replace(minute=10)
+    results = evaluator.evaluate_all("p1", well, later)
+    assert results["sepsis_lock"].open is True
+    assert "cooldown" in results["sepsis_lock"].reasons[0]
+    latched = engine.decide("p1", well, results, later)
+    assert latched.decision == "ESCALATE"
+    assert latched.triggered_by_keys == ()
+    assert latched.confidence == 1.0 and latched.confidence_basis == "absence"
+    latched.validate(check_fingerprint=True)
