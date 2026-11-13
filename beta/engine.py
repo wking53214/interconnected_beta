@@ -16,7 +16,7 @@ extraction: ConsensusEngine returns confidence=0.0 when there's nothing
 to average ("no gates evaluated" is treated as a genuine error there).
 Here, a rule can legitimately match on absence of evidence alone (all
 its requirements are in closed_locks, no open_locks at all -- e.g. "safe
-to discharge" triggered by the ABSENCE of any danger Lock, not the
+to proceed" triggered by the ABSENCE of any danger Lock, not the
 presence of a recovery Key). That's not an error state, so this engine
 returns confidence=1.0 for that case instead of 0.0 -- full confidence
 in a cleanly-matched absence, not "no confidence in anything."

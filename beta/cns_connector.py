@@ -20,7 +20,7 @@ Binding only
 ------------
 This is deliberately not a gate and it invents no verdict. There is no mapping
 from a Decision to ``PASS``, ``RETRY`` or ``TERMINAL_BREACH``. A Decision is a
-governed recommendation ("ESCALATE", "HOLD", "DISCHARGE_SAFE" are conventions
+governed recommendation ("ESCALATE", "HOLD", "CLEAR" are conventions
 a rule author picks, see the README), and turning it into a gate outcome would
 assign it a meaning beta does not have. Whoever issues a verdict about a
 decision owns that meaning; this module only lets them say which decision it

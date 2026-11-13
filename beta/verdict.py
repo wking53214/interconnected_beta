@@ -90,7 +90,7 @@ from typing import Tuple
 class Decision:
     entity_id: str
     decision_id: str  # which DecisionRule matched (beta/rules.py)
-    decision: str  # the verdict value, e.g. "ESCALATE", "DISCHARGE_SAFE"
+    decision: str  # the verdict value, e.g. "ESCALATE", "CLEAR"
     timestamp: datetime
 
     # --- Extracted core (see field-mapping table above) ---
