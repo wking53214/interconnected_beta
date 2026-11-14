@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 # The zeta commit the runtime dependency installs. Moving it is a reviewed change.
-EXPECTED_ZETA_PIN = "7cee0a35be741c6f299ffcd2a024c4edfcbaa80d"
+EXPECTED_ZETA_PIN = "cc200d76f518e5a48e8d39c5d47fc9673285233e"
 
 
 # pyproject is read as text: tomllib needs Python 3.11 and the floor here is 3.9.
