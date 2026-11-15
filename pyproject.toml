@@ -5,7 +5,7 @@ description = "Lock states + Keys -> a governed Decision with narrative (reasoni
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 dependencies = [
-    "zeta @ git+https://github.com/wking53214/interconnected_zeta@cc200d76f518e5a48e8d39c5d47fc9673285233e",
+    "zeta @ git+https://github.com/wking53214/interconnected_zeta@cd22c2d12ad3353ded7fc37ad15018394c1d0f25",
 ]
 
 [project.optional-dependencies]
