@@ -5,13 +5,13 @@ description = "Lock states + Keys -> a governed Decision with narrative (reasoni
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 dependencies = [
-    "zeta @ git+https://github.com/wking53214/interconnected_zeta@cd22c2d12ad3353ded7fc37ad15018394c1d0f25",
+    "zeta @ git+https://github.com/wking53214/interconnected_zeta@97f789969299573f2fcdd3243ca9b6c8dbfc46be",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
 # Optional: lets a Decision be bound to a CNS verdict (beta.cns_connector). Nothing in beta imports CNS otherwise.
-cns = ["cns @ git+https://github.com/wking53214/CNS.git@v4.0.0"]
+cns = ["cns @ git+https://github.com/wking53214/CNS.git@v4.1.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
