@@ -2,6 +2,18 @@
 
 Lock states + Keys → a governed **Decision with narrative**. Version `0.1.0`. Depends on [`interconnected_zeta`](https://github.com/wking53214/interconnected_zeta). Python ≥ 3.10.
 
+## Role Within ≡TACK
+
+- **What it is.** The decision stage of the small reference spine: lock states and Keys in, a Decision with a written explanation out.
+- **Authority matrix.** Evaluation and evidence generation (the decision and its fingerprints). It does not define policy beyond its declarative rules, enforce, authorize or authenticate. Policy approval is not authorization (section 1).
+- **Owns.** Declarative decision rules, the engine, the `Decision` shape, and its fingerprints.
+- **Does not own.** Lock evaluation (zeta), key detection (alpha), custody (delta), execution, and who the entity is.
+- **Depends on.** `zeta`, pinned by git commit. CNS is optional.
+- **Depended on by.** delta consumes `Decision` per the delta README (not re-checked here).
+- **Fail behavior.** Closed on bad config: an unevaluated lock never matches, ambiguous rules at the same priority raise, and no matching rule raises. Open to a caller that feeds synthetic `LockResult`s: the engine will decide. Open, by design, on any lock no rule names: a rule matches on the locks it lists and ignores every other lock, so a rule that requires only `lock_a` closed returned its decision, with confidence 1.0, while `lock_b` was open (EXECUTED 2026-11-17). A rule set must name every lock that should block a decision. Two rules at the same priority are refused only at decide time, when both match, not when the engine is built (EXECUTED 2026-11-17). The content fingerprint is keyless, so someone who edits fields and recomputes it is not caught.
+
+Status: library, version 0.1.0. EXECUTED 2026-11-17 at `9c0d717`, Python 3.13, in a fresh environment: `pip install -e ".[dev]" && pytest` gives 173 passed, 2 skipped (the two need CNS). With the `cns` extra installed and `BETA_REQUIRE_CNS=1`, which is how CI's second job runs, 260 passed and none skipped. Not run: GitHub CI, Python 3.10 to 3.12.
+
 ## 1. Pipeline Position & Role
 
 **DECISION.** Third stage of the extracted spine.
@@ -9,6 +21,8 @@ Lock states + Keys → a governed **Decision with narrative**. Version `0.1.0`. 
 ```text
 α Alpha (Keys) → ζ Zeta (Locks) → β Beta (this repo) → δ Delta (custody)
 ```
+
+The order above is the design order. CNS's script `chains/spine_run.py` runs all four repos in this order (EXECUTED 2026-11-17: exit 0 against the four mains). observe-perceive's orchestrator does not call them.
 
 **Policy approval is not authorization.** This layer produces a decision and an explanation. It does not issue human authority to execute.
 
@@ -35,7 +49,7 @@ Two parts: extracted verdict shape, and a narrative layer that **does not exist 
 
 Confidence: geometric-mean analogue over Keys **necessary** to satisfy each matched rule's `open_locks` combination (AND/OR/N_OF_M). Averaging every present-and-required Key would let an incidental zero-confidence Key zero out an OR lock. Deliberate deviation: source `ConsensusEngine` returns `0.0` when nothing was evaluated; β returns `1.0` when no Key is necessary to the match (`confidence_basis` `"absence"`, `triggered_by_keys` empty). That covers a rule that matches on *absence* of danger (all `closed_locks`), and also a rule that matches an **open** lock with no present required Key: a lock latched open by ζ's `lock_seconds` cooldown (or opened earlier and still latched) stays open while the Keys have gone, so `decide()` returns, for example, `ESCALATE` with confidence `1.0`, basis `"absence"` and no keys. The latch is ζ's documented design and β does not look at it; the reason ("In cooldown until ...") is in the `LockResult`, not in the `Decision`. `1.0` here is not a calibrated probability. Read `confidence_basis` with `triggered_by_locks`, not as a statement about closed locks.
 
-### New (narrative — not present in OBSERVE/PERCEIVE/drive/ascent)
+### New (narrative, not present in OBSERVE/PERCEIVE/drive/ascent)
 
 `reasoning`, `reversal_conditions`, `instructions` were searched for across those four sources. None has them. This is the gap the project set out to close.
 
@@ -63,7 +77,7 @@ Confidence: geometric-mean analogue over Keys **necessary** to satisfy each matc
 
 | Gap | Detail |
 |---|---|
-| Not on live orchestrator path | observe-perceive `GovernanceOrchestrator` uses PERCEIVE + Conservation Kernel + `execution_guard`, not `DecisionEngine`. Dual decision path. |
+| Not on the orchestrator path | observe-perceive `GovernanceOrchestrator` uses PERCEIVE + Conservation Kernel + `execution_guard`, not `DecisionEngine`. Dual decision path. |
 | Narrative templates | String templates, not a proof that reversal conditions are machine-checked later. δ obligations are a separate mechanism. |
 | Git dependency | `zeta` is pinned by commit in `pyproject.toml` (`tests/test_zeta_pin.py` holds the pin), so moving it is a reviewed change. It is a git dependency, not on a package index. |
 | Inputs are only partly checked | `decide(entity_id, keys, lock_results, timestamp)` takes its arguments independently. It now checks that the lock results were evaluated from the KeySet it is given: each `LockResult` records zeta's fingerprint of its KeySet, and `decide` raises `KeySetMismatchError` when one differs or when only some record one (well keys with a sick patient's results used to return ESCALATE with no triggering Keys and full confidence). It now also checks the entity: a lock result that records an entity other than the one given raises `EntityMismatchError` (a `ValueError`, naming both ids), and a result that records none (hand-built, or from an older zeta) is accepted. It still does not check the time of the lock results, and results that record no fingerprint (hand-built, or from an older zeta) still decide, with the Decision recording `keyset_fingerprint` "" so it cannot claim a KeySet. The fingerprint is a fact computed by zeta, not a signature: someone who controls the evaluation can lie. Binding (`context`, below) adds the entity and the lineage digests. |
@@ -81,7 +95,7 @@ Confidence: geometric-mean analogue over Keys **necessary** to satisfy each matc
 - `decide` raises `StaleLockResultError` when any supplied `LockResult` has `stale=True`, naming the locks: zeta refused that observation, so no Decision is made from it. Retrying is the caller's.
 - A frozen dataclass is not a security boundary: `object.__setattr__` can still change a Decision in memory. The recording boundary re-validates; in-process use is not protected.
 
-36 tests. `pip install -e ".[dev]" && pytest`.
+`pip install -e ".[dev]" && pytest`. Current counts are in the Status line at the top; the "36 tests" figure that stood here was out of date.
 
 ## 5. Core Invariants & Guarantees
 
@@ -89,7 +103,7 @@ Confidence: geometric-mean analogue over Keys **necessary** to satisfy each matc
 - Ambiguous highest-priority match raises.
 - Fingerprint is a SHA-256 of canonical decision inputs (recomputable, no wall-clock).
 - Only Keys actually needed by each lock's combination contribute to confidence.
-- Policy permission ≠ authorization (stated in the type, not enforced by a grant check — there is none).
+- Policy permission ≠ authorization (stated in the type, not enforced by a grant check, there is none).
 
 ## 6. Inputs, Outputs & Type Contracts
 
@@ -113,6 +127,8 @@ from beta import DecisionEngine, DecisionRule, DecisionRuleRegistry, Decision
                                       → δ.DecisionLedger.append
                                       → δ.DecisionObligationTracker.open_for_decision
 ```
+
+Who runs this order: CNS's script `chains/spine_run.py`, not observe-perceive's orchestrator (see section 1 for the evidence).
 
 Hub that does **not** import β: [`observe-perceive`](https://github.com/wking53214/observe-perceive).  
 Custody: [`interconnected_delta`](https://github.com/wking53214/interconnected_delta).
