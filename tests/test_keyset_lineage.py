@@ -42,7 +42,7 @@ def results_for(ks, entity="p1"):
 
 def test_matching_keys_and_results_decide_and_the_decision_records_the_keyset():
     _, engine = build()
-    d = engine.decide("p1", SICK, results_for(SICK), T0)
+    d = engine.decide("p1", SICK, results_for(SICK), T0, test_only=True)
     assert d.decision == "ESCALATE" and d.keyset_fingerprint == SICK.fingerprint()
     d.validate()
 
@@ -51,13 +51,13 @@ def test_well_keys_with_a_sick_patients_results_are_refused_not_decided():
     """The reproduced attack: this used to return ESCALATE, keys (), confidence 1.0, basis 'absence'."""
     _, engine = build()
     with pytest.raises(KeySetMismatchError, match="evaluated from a different KeySet.*sepsis_lock"):
-        engine.decide("p1", WELL, results_for(SICK), T0)
+        engine.decide("p1", WELL, results_for(SICK), T0, test_only=True)
 
 
 def test_the_same_present_keys_from_other_readings_are_still_a_different_keyset():
     _, engine = build()
     with pytest.raises(KeySetMismatchError):
-        engine.decide("p1", keys(True, reason="HR 149"), results_for(keys(True, reason="HR 148")), T0)
+        engine.decide("p1", keys(True, reason="HR 149"), results_for(keys(True, reason="HR 148")), T0, test_only=True)
 
 
 def test_one_foreign_result_among_matching_ones_is_named():
@@ -65,7 +65,7 @@ def test_one_foreign_result_among_matching_ones_is_named():
     res = dict(results_for(SICK))
     res["other_lock"] = results_for(WELL)["other_lock"]
     with pytest.raises(KeySetMismatchError) as caught:
-        engine.decide("p1", SICK, res, T0)
+        engine.decide("p1", SICK, res, T0, test_only=True)
     assert "other_lock" in str(caught.value) and "sepsis_lock" not in str(caught.value)
 
 
@@ -74,14 +74,14 @@ def test_a_mix_of_results_that_record_a_fingerprint_and_results_that_do_not_is_r
     res = dict(results_for(SICK))
     res["other_lock"] = replace(res["other_lock"], keyset_fingerprint="")
     with pytest.raises(KeySetMismatchError, match="some lock results record a KeySet fingerprint and some do not"):
-        engine.decide("p1", SICK, res, T0)
+        engine.decide("p1", SICK, res, T0, test_only=True)
 
 
 def test_results_that_record_no_fingerprint_at_all_still_decide_but_the_decision_says_it_is_unbound():
     """Hand-built results (or an older zeta) keep working; they just cannot claim a KeySet."""
     _, engine = build()
     bare = {lid: LockResult(lock_id=lid, open=r.open, changed=r.changed, forced=r.forced) for lid, r in results_for(SICK).items()}
-    d = engine.decide("p1", SICK, bare, T0)
+    d = engine.decide("p1", SICK, bare, T0, test_only=True)
     assert d.decision == "ESCALATE" and d.keyset_fingerprint == ""
 
 
@@ -91,7 +91,7 @@ def test_a_stale_result_is_still_refused_first():
     _, engine = build()
     res = {lid: replace(r, stale=True) for lid, r in results_for(SICK).items()}
     with pytest.raises(StaleLockResultError):
-        engine.decide("p1", SICK, res, T0)
+        engine.decide("p1", SICK, res, T0, test_only=True)
 
 
 def test_validate_checks_the_recorded_keyset_fingerprint_is_empty_or_a_full_sha256():

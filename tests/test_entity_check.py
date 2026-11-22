@@ -25,7 +25,7 @@ def test_results_for_another_entity_are_refused_and_both_ids_are_named():
     results = evaluator.evaluate_all("patient_sick", keys, T0)
     assert results["sepsis_lock"].entity_id == "patient_sick"
     with pytest.raises(EntityMismatchError) as err:
-        engine.decide("patient_well", keys, results, T0)
+        engine.decide("patient_well", keys, results, T0, test_only=True)
     assert "patient_well" in str(err.value) and "patient_sick" in str(err.value)
     assert isinstance(err.value, ValueError)
 
@@ -33,12 +33,12 @@ def test_results_for_another_entity_are_refused_and_both_ids_are_named():
 def test_results_with_no_entity_are_accepted_as_legacy():
     engine, keys, evaluator = build()
     results = {k: dataclasses.replace(v, entity_id="") for k, v in evaluator.evaluate_all("p1", keys, T0).items()}
-    assert engine.decide("anyone", keys, results, T0).decision == "ESCALATE"
+    assert engine.decide("anyone", keys, results, T0, test_only=True).decision == "ESCALATE"
 
 
 def test_matching_entity_is_accepted():
     engine, keys, evaluator = build()
-    assert engine.decide("p1", keys, evaluator.evaluate_all("p1", keys, T0), T0).entity_id == "p1"
+    assert engine.decide("p1", keys, evaluator.evaluate_all("p1", keys, T0), T0, test_only=True).entity_id == "p1"
 
 
 def test_one_foreign_result_among_matching_ones_is_enough_to_refuse():
@@ -46,4 +46,4 @@ def test_one_foreign_result_among_matching_ones_is_enough_to_refuse():
     results = evaluator.evaluate_all("p1", keys, T0)
     results["sepsis_lock"] = dataclasses.replace(results["sepsis_lock"], entity_id="p2")
     with pytest.raises(EntityMismatchError, match="p2"):
-        engine.decide("p1", keys, results, T0)
+        engine.decide("p1", keys, results, T0, test_only=True)

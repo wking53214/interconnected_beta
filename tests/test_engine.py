@@ -74,7 +74,7 @@ def test_escalate_when_sepsis_lock_opens():
         Key(name="septic_shock", present=True, confidence=0.95),
     ])
     engine = DecisionEngine(build_decision_registry(), lock_registry)
-    decision = engine.decide("patient1", keys, results, T0)
+    decision = engine.decide("patient1", keys, results, T0, test_only=True)
 
     assert decision.decision == "ESCALATE"
     assert decision.decision_id == "escalate_sepsis"
@@ -90,7 +90,7 @@ def test_discharge_safe_when_all_danger_locks_closed():
         Key(name="tachycardia", present=False),
     ])
     engine = DecisionEngine(build_decision_registry(), lock_registry)
-    decision = engine.decide("patient1", keys, results, T0)
+    decision = engine.decide("patient1", keys, results, T0, test_only=True)
 
     assert decision.decision == "DISCHARGE_SAFE"
     assert decision.triggered_by_keys == ()  # no positive evidence, absence-based
@@ -108,7 +108,7 @@ def test_decide_rejects_lock_result_filed_under_another_lock_id():
     mislabeled["abnormal_vitals_lock"] = results["sepsis_lock"]
 
     with pytest.raises(ValueError, match="filed under its own lock id"):
-        engine.decide("patient1", keys, mislabeled, T0)
+        engine.decide("patient1", keys, mislabeled, T0, test_only=True)
 
 
 def test_decide_rejects_non_datetime_timestamp():
@@ -118,7 +118,7 @@ def test_decide_rejects_non_datetime_timestamp():
     engine = DecisionEngine(build_decision_registry(), lock_registry)
 
     with pytest.raises(TypeError, match="timestamp must be a datetime"):
-        engine.decide("patient1", keys, results, "2026-01-01T12:00:00")
+        engine.decide("patient1", keys, results, "2026-01-01T12:00:00", test_only=True)
 
 
 def test_absence_only_match_reports_absence_basis():
@@ -129,7 +129,7 @@ def test_absence_only_match_reports_absence_basis():
         Key(name="tachycardia", present=False),
     ])
     engine = DecisionEngine(build_decision_registry(), lock_registry)
-    decision = engine.decide("patient1", keys, results, T0)
+    decision = engine.decide("patient1", keys, results, T0, test_only=True)
 
     assert decision.confidence == 1.0 and decision.confidence_basis == "absence"
 
@@ -139,7 +139,7 @@ def test_key_based_match_reports_keys_basis():
         Key(name="septic_shock", present=True, confidence=0.95),
     ])
     engine = DecisionEngine(build_decision_registry(), lock_registry)
-    decision = engine.decide("patient1", keys, results, T0)
+    decision = engine.decide("patient1", keys, results, T0, test_only=True)
 
     assert decision.triggered_by_keys == ("septic_shock",)
     assert decision.confidence_basis == "keys"
@@ -152,7 +152,7 @@ def test_hold_when_abnormal_but_not_septic():
         Key(name="respiratory_distress", present=False),
     ])
     engine = DecisionEngine(build_decision_registry(), lock_registry)
-    decision = engine.decide("patient1", keys, results, T0)
+    decision = engine.decide("patient1", keys, results, T0, test_only=True)
 
     assert decision.decision == "HOLD"
 
@@ -173,7 +173,7 @@ def test_higher_priority_rule_wins_when_multiple_match():
     results = evaluator.evaluate_all("patient1", keys, T0)
 
     engine = DecisionEngine(decision_registry, lock_registry)
-    decision = engine.decide("patient1", keys, results, T0)
+    decision = engine.decide("patient1", keys, results, T0, test_only=True)
     assert decision.decision == "A"
 
 
@@ -189,7 +189,7 @@ def test_ambiguous_same_priority_raises():
 
     engine = DecisionEngine(decision_registry, lock_registry)
     with pytest.raises(AmbiguousRuleError):
-        engine.decide("patient1", keys, results, T0)
+        engine.decide("patient1", keys, results, T0, test_only=True)
 
 
 def test_no_matching_rule_raises():
@@ -205,7 +205,7 @@ def test_no_matching_rule_raises():
 
     engine = DecisionEngine(decision_registry, lock_registry)
     with pytest.raises(NoMatchingRuleError):
-        engine.decide("patient1", keys, results, T0)
+        engine.decide("patient1", keys, results, T0, test_only=True)
 
 
 # --- Confidence aggregation ---
@@ -225,7 +225,7 @@ def test_confidence_is_geometric_mean_of_triggering_keys():
     results = evaluator.evaluate_all("patient1", keys, T0)
 
     engine = DecisionEngine(decision_registry, lock_registry)
-    decision = engine.decide("patient1", keys, results, T0)
+    decision = engine.decide("patient1", keys, results, T0, test_only=True)
 
     expected = (0.8 * 0.5) ** 0.5
     assert decision.confidence == pytest.approx(expected)
@@ -249,7 +249,7 @@ def test_confidence_only_counts_present_keys_in_or_lock():
     results = evaluator.evaluate_all("patient1", keys, T0)
 
     engine = DecisionEngine(decision_registry, lock_registry)
-    decision = engine.decide("patient1", keys, results, T0)
+    decision = engine.decide("patient1", keys, results, T0, test_only=True)
 
     assert decision.confidence == pytest.approx(0.7)
     assert decision.triggered_by_keys == ("a",)
@@ -275,7 +275,7 @@ def test_or_lock_confidence_not_zeroed_by_incidentally_present_weak_key():
     results = evaluator.evaluate_all("patient1", keys, T0)
 
     engine = DecisionEngine(decision_registry, lock_registry)
-    decision = engine.decide("patient1", keys, results, T0)
+    decision = engine.decide("patient1", keys, results, T0, test_only=True)
 
     assert decision.confidence == pytest.approx(0.99), (
         "confidence must reflect the strongest necessary evidence for an OR lock, "
@@ -302,7 +302,7 @@ def test_n_of_m_lock_confidence_credits_only_top_n_keys():
     results = evaluator.evaluate_all("patient1", keys, T0)
 
     engine = DecisionEngine(decision_registry, lock_registry)
-    decision = engine.decide("patient1", keys, results, T0)
+    decision = engine.decide("patient1", keys, results, T0, test_only=True)
 
     expected = (0.9 * 0.8) ** 0.5
     assert decision.confidence == pytest.approx(expected)
@@ -328,7 +328,7 @@ def test_and_lock_still_averages_every_present_required_key():
     results = evaluator.evaluate_all("patient1", keys, T0)
 
     engine = DecisionEngine(decision_registry, lock_registry)
-    decision = engine.decide("patient1", keys, results, T0)
+    decision = engine.decide("patient1", keys, results, T0, test_only=True)
 
     expected = (0.9 * 0.8 * 0.7) ** (1 / 3)
     assert decision.confidence == pytest.approx(expected)
@@ -371,12 +371,12 @@ def test_newly_triggered_locks_true_on_first_open_false_on_subsequent():
 
     keys = KeySet([Key(name="a", present=True)])
     results1 = evaluator.evaluate_all("patient1", keys, T0)
-    d1 = engine.decide("patient1", keys, results1, T0)
+    d1 = engine.decide("patient1", keys, results1, T0, test_only=True)
     assert d1.newly_triggered_locks == ("l1",)
 
     from datetime import timedelta
     results2 = evaluator.evaluate_all("patient1", keys, T0 + timedelta(seconds=1))
-    d2 = engine.decide("patient1", keys, results2, T0 + timedelta(seconds=1))
+    d2 = engine.decide("patient1", keys, results2, T0 + timedelta(seconds=1), test_only=True)
     assert d2.newly_triggered_locks == ()
 
 
@@ -386,8 +386,8 @@ def test_fingerprint_deterministic_for_identical_inputs():
     lock_registry, keys, results = evaluate([Key(name="septic_shock", present=True)])
     engine = DecisionEngine(build_decision_registry(), lock_registry)
 
-    d1 = engine.decide("patient1", keys, results, T0)
-    d2 = engine.decide("patient1", keys, results, T0)
+    d1 = engine.decide("patient1", keys, results, T0, test_only=True)
+    d2 = engine.decide("patient1", keys, results, T0, test_only=True)
     assert d1.decision_fingerprint == d2.decision_fingerprint
 
 
@@ -399,8 +399,8 @@ def test_fingerprint_differs_for_different_entity():
 
     # decide now refuses lock results about another entity, so patient2's results are patient2's own
     results2 = {k: dataclasses.replace(v, entity_id="patient2") for k, v in results.items()}
-    d1 = engine.decide("patient1", keys, results, T0)
-    d2 = engine.decide("patient2", keys, results2, T0)
+    d1 = engine.decide("patient1", keys, results, T0, test_only=True)
+    d2 = engine.decide("patient2", keys, results2, T0, test_only=True)
     assert d1.decision_fingerprint != d2.decision_fingerprint
 
 
@@ -411,8 +411,8 @@ def test_fingerprint_ignores_timestamp():
     lock_registry, keys, results = evaluate([Key(name="septic_shock", present=True)])
     engine = DecisionEngine(build_decision_registry(), lock_registry)
 
-    d1 = engine.decide("patient1", keys, results, T0)
-    d2 = engine.decide("patient1", keys, results, T0 + timedelta(days=1))
+    d1 = engine.decide("patient1", keys, results, T0, test_only=True)
+    d2 = engine.decide("patient1", keys, results, T0 + timedelta(days=1), test_only=True)
     assert d1.decision_fingerprint == d2.decision_fingerprint
 
 
@@ -421,7 +421,7 @@ def test_fingerprint_ignores_timestamp():
 def test_reversal_conditions_and_instructions_carried_from_rule():
     lock_registry, keys, results = evaluate([Key(name="septic_shock", present=True)])
     engine = DecisionEngine(build_decision_registry(), lock_registry)
-    decision = engine.decide("patient1", keys, results, T0)
+    decision = engine.decide("patient1", keys, results, T0, test_only=True)
 
     assert decision.reversal_conditions == ("sepsis_lock closes",)
     assert "emergency room" in decision.instructions
