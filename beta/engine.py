@@ -47,22 +47,34 @@ Where lock results come from (the trust boundary):
     Its Decision records provenance "supplied-test" and must never be acted on
     or recorded as a real one. It does not apply the evidence completeness
     check, because it exists to exercise rule logic in isolation.
+  Signed lock results: an engine built with lock_result_verifier (the
+  operator's verify callable) refuses, with LockResultSignatureError, any lock
+  result whose signature is missing or does not check out, on both paths, and
+  makes no Decision. beta rebuilds the signed bytes itself (beta.signing). With
+  a verifier and no lock_result_signer, the engine refuses before it evaluates
+  anything; otherwise the refusal comes after zeta signs, inside the
+  all-or-nothing step, so the entity's lock states are put back. With no
+  verifier (the default) nothing is checked, as before, and that setup is
+  unprotected.
   Limits: anyone who can run code in this process can still construct a
-  rigged LockStateStore, or call the test path; the provenance stamp makes the
-  second visible but does not prevent it. Proving who produced a result needs
-  signing and an outside record (a later step).
+  rigged LockStateStore, call the test path, or call the signer; the
+  provenance stamp makes the second visible but does not prevent it, and a
+  signature proves who held the signer, not that the evaluation was honest
+  (a separate signer process is the next step). An outside record of what was
+  decided is delta's.
 """
 
 import math
 import dataclasses
 from datetime import datetime
-from typing import Dict, List, Optional, Set
+from typing import Callable, Dict, List, Optional, Set
 
 import zeta
 from zeta import Combination, KeySet, LockEvaluator, LockRegistry, LockResult, LockSpec, LockStateStore
 
 from .fingerprint import content_fingerprint, decision_fingerprint, lock_results_digest, lock_state_digest
 from .rules import DecisionRule, DecisionRuleRegistry
+from .signing import lock_result_signature_ok
 from .verdict import PROVENANCE_EVALUATED, PROVENANCE_SUPPLIED_TEST, Decision
 
 # Named in lock_results_digest so a digest says which evaluator produced the results it covers.
@@ -133,6 +145,14 @@ class SuppliedLockResultsRefused(Exception):
     """
 
 
+class LockResultSignatureError(Exception):
+    """A verifier is plugged in and a lock result's signature is missing or does not check out.
+
+    Fail closed: no Decision is made. On the normal path the entity's lock states are put back (or, with no signer,
+    never touched), so a retry with a working signer counts the observation once.
+    """
+
+
 class MissingEvidenceError(Exception):
     """The KeySet does not report a Key that some lock requires.
 
@@ -174,13 +194,23 @@ class DecisionEngine:
         rules: DecisionRuleRegistry,
         lock_registry: LockRegistry,
         state_store: Optional[LockStateStore] = None,
+        *,
+        lock_result_signer: Optional[Callable[[bytes], bytes]] = None,
+        lock_result_verifier: Optional[Callable[[bytes, bytes], bool]] = None,
     ) -> None:
+        # lock_result_signer is handed to zeta's evaluator, which signs every result with it. lock_result_verifier is
+        # the operator's checker; with one plugged in, unsigned or badly signed lock results are refused. Both default
+        # to None: nothing signed, nothing checked, behaviour as before.
+        for name, fn in (("lock_result_signer", lock_result_signer), ("lock_result_verifier", lock_result_verifier)):
+            if fn is not None and not callable(fn):
+                raise TypeError(f"{name} must be callable or None; got {type(fn).__name__}")
         self.rules = rules
         self.lock_registry = lock_registry
         self._validate_rules_reference_known_locks()
+        self.lock_result_verifier = lock_result_verifier
         # The engine's own evaluator, over the same registry its rules were checked against. state_store lets a caller
         # keep lock state across engines or restarts; it is trusted (see the module docstring's limits).
-        self.lock_evaluator = LockEvaluator(lock_registry, state_store)
+        self.lock_evaluator = LockEvaluator(lock_registry, state_store, signer=lock_result_signer)
 
     @property
     def state_store(self) -> LockStateStore:
@@ -198,6 +228,20 @@ class DecisionEngine:
                 "the KeySet does not report Key(s) a lock requires, so their absence was never checked: "
                 + ", ".join(f"{name} (for {lock_id})" for lock_id, name in missing)
                 + "; report each one, with present=False if it was checked and not found"
+            )
+
+    def _check_signatures(self, lock_results: Dict[str, LockResult]) -> None:
+        if self.lock_result_verifier is None:
+            return
+        missing = sorted(lid for lid, lr in lock_results.items() if not getattr(lr, "signature", b""))
+        bad = sorted(lid for lid, lr in lock_results.items()
+                     if lid not in missing and not lock_result_signature_ok(lr, self.lock_result_verifier))
+        if missing or bad:
+            raise LockResultSignatureError(
+                "a lock result signature checker is plugged in and lock result(s) failed it"
+                + (f"; unsigned: {', '.join(missing)}" if missing else "")
+                + (f"; signature does not check out: {', '.join(bad)}" if bad else "")
+                + "; no Decision is made"
             )
 
     def _validate_rules_reference_known_locks(self) -> None:
@@ -269,6 +313,11 @@ class DecisionEngine:
             raise TypeError(f"timestamp must be a datetime, got {type(timestamp).__name__}")
         if not isinstance(keys, KeySet):
             raise TypeError(f"keys must be a zeta KeySet, got {type(keys).__name__}")
+        if self.lock_result_verifier is not None and self.lock_evaluator.signer is None:
+            raise LockResultSignatureError(
+                "a lock result signature checker is plugged in but no signer is, so every lock result would be "
+                "unsigned; refused before any lock state changes, no Decision is made"
+            )
         self._check_evidence_complete(keys)
         store = self.state_store
         with store.lock:
@@ -318,6 +367,7 @@ class DecisionEngine:
     ) -> Decision:
         if not isinstance(timestamp, datetime):
             raise TypeError(f"timestamp must be a datetime, got {type(timestamp).__name__}")
+        self._check_signatures(lock_results)
         for lock_id, lock_result in lock_results.items():
             if lock_result.lock_id != lock_id:
                 raise ValueError(
