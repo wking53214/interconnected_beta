@@ -17,10 +17,12 @@ unevaluated locks).
 from .verdict import Decision
 from .rules import DecisionRule, DecisionRuleRegistry
 from .engine import (DecisionEngine, EntityMismatchError, NoMatchingRuleError, AmbiguousRuleError, KeySetMismatchError,
-                     StaleLockResultError, SuppliedLockResultsRefused, MissingEvidenceError, Evaluation)
+                     StaleLockResultError, SuppliedLockResultsRefused, MissingEvidenceError, Evaluation,
+                     LockResultSignatureError)
 from .fingerprint import (canonical_decision, content_fingerprint, decision_fingerprint, lock_results_digest,
                           lock_state_digest)
 from .verdict import PROVENANCE_EVALUATED, PROVENANCE_SUPPLIED_TEST
+from .signing import lock_result_signature_ok, lock_result_signing_input
 
 __all__ = [
     "Decision",
@@ -35,6 +37,7 @@ __all__ = [
     "SuppliedLockResultsRefused",
     "MissingEvidenceError",
     "Evaluation",
+    "LockResultSignatureError",
     "PROVENANCE_EVALUATED",
     "PROVENANCE_SUPPLIED_TEST",
     "lock_results_digest",
@@ -42,6 +45,8 @@ __all__ = [
     "decision_fingerprint",
     "content_fingerprint",
     "canonical_decision",
+    "lock_result_signing_input",
+    "lock_result_signature_ok",
 ]
 
 __version__ = "0.1.0"

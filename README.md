@@ -12,7 +12,7 @@ Lock states + Keys → a governed **Decision with narrative**. Version `0.1.0`. 
 - **Depended on by.** delta consumes `Decision` per the delta README (not re-checked here).
 - **Fail behavior.** Closed on bad config: an unevaluated lock never matches, ambiguous rules at the same priority raise, and no matching rule raises. Closed to hand-fed `LockResult`s: `decide` refuses them unless the caller passes `test_only=True`, and that Decision is stamped `provenance` `"supplied-test"`. The normal path, `decide_from_keys`, evaluates the locks itself and refuses a KeySet that does not report every Key a lock requires (see "Trust boundary" below). Open, by design, on any lock no rule names: a rule matches on the locks it lists and ignores every other lock, so a rule that requires only `lock_a` closed returned its decision, with confidence 1.0, while `lock_b` was open (EXECUTED 2026-11-17). A rule set must name every lock that should block a decision. Two rules at the same priority are refused only at decide time, when both match, not when the engine is built (EXECUTED 2026-11-17). The content fingerprint is keyless, so someone who edits fields and recomputes it is not caught.
 
-Status: library, version 0.1.0. EXECUTED 2026-11-17 at `9c0d717`, Python 3.13, in a fresh environment: `pip install -e ".[dev]" && pytest` gives 173 passed, 2 skipped (the two need CNS). With the `cns` extra installed and `BETA_REQUIRE_CNS=1`, which is how CI's second job runs, 260 passed and none skipped. Not run: GitHub CI, Python 3.10 to 3.12. On branch `beta/evaluate-locks-itself` (2026-11-22, Python 3.13, CNS installed, `BETA_REQUIRE_CNS=1`): 285 passed (EXECUTED). Against that branch, CNS `chains/spine_run.py` (192 scenarios) fails 170 and passes 22; every failure traced to `decide` refusing hand-fed lock results (EXECUTED), so the harness needs moving to `decide_from_keys`.
+Status: library, version 0.1.0. EXECUTED 2026-11-17 at `9c0d717`, Python 3.13, in a fresh environment: `pip install -e ".[dev]" && pytest` gives 173 passed, 2 skipped (the two need CNS). With the `cns` extra installed and `BETA_REQUIRE_CNS=1`, which is how CI's second job runs, 260 passed and none skipped. Not run: GitHub CI, Python 3.10 to 3.12. On branch `beta/evaluate-locks-itself` (2026-11-22, Python 3.13, CNS installed, `BETA_REQUIRE_CNS=1`): 285 passed (EXECUTED). Against that branch, CNS `chains/spine_run.py` (192 scenarios) fails 170 and passes 22; every failure traced to `decide` refusing hand-fed lock results (EXECUTED), so the harness needs moving to `decide_from_keys`. On branch `beta/check-signed-lock-results` (2026-11-22, Python 3.13, zeta `0ab30b2`): 228 passed, 2 skipped without CNS; with CNS and `BETA_REQUIRE_CNS=1`, 320 passed (EXECUTED).
 
 ## Trust boundary (lock results)
 
@@ -30,7 +30,7 @@ What changed:
 Limits (INFERRED unless marked):
 
 - Anyone who can run code in this process can still pass a rigged `LockStateStore`, call the test path, or edit a Decision and recompute its keyless fingerprints. The `provenance` stamp makes the test path visible; it does not prevent it.
-- The digests identify results; they do not prove who produced them. Signed lock results and an outside record are the next step.
+- The digests identify results; they do not prove who produced them. Signed lock results (next section) prove who held the signer; an outside record is delta's.
 - delta at its current pin does not record `provenance` or the two lock digests in its ledger, and does not refuse `"supplied-test"` Decisions. That needs a delta change.
 - CNS's `chains/spine_run.py` calls `decide` with lock results and will be refused against this version until it moves to `decide_from_keys` or passes `test_only=True` deliberately.
 - A Key reported `present=True` below the KeySet's `min_confidence` counts as reported and not present, per zeta.
@@ -83,6 +83,40 @@ Confidence: geometric-mean analogue over Keys **necessary** to satisfy each matc
 - No matching rule → `NoMatchingRuleError`.
 
 `DecisionEngine` is **stateless per call**. Lock dwell/cooldown lives in ζ.
+
+## Signed lock results
+
+zeta can sign every lock result through a signer the operator plugs in (see interconnected_zeta's README). beta can
+check those signatures and refuse to decide on anything that fails.
+
+```python
+engine = DecisionEngine(rules, registry, lock_result_signer=private_key.sign, lock_result_verifier=verify)
+```
+
+- **With a checker plugged in** (`lock_result_verifier`, the operator's verify callable), every lock result must carry a
+  signature that checks out. A missing or failing one raises `LockResultSignatureError`, naming the locks, and no
+  Decision is made. This holds on both paths, including the test path.
+  - With a checker and **no signer**, every result would be unsigned, so the engine refuses before it evaluates
+    anything: lock state is never touched.
+  - With both, zeta signs while it evaluates, so the check comes right after. It runs inside the all-or-nothing step:
+    on a refusal the entity's lock states are put back, and a retry with a working signer counts the observation once.
+- **With no checker** (the default) nothing is checked and behaviour is exactly as before. That setup is
+  **unprotected**: anyone who can build a `LockResult` can feed the test path, and nothing proves who produced a result.
+- **beta builds the signed bytes itself.** `beta/signing.py` keeps its own copy of the signing rules (domain label
+  `zeta-lock-result-signature/1`, canonical ASCII JSON, strict UTF-8), byte for byte the same as zeta's and
+  interconnected_delta's. `tests/test_signing.py` proves it against zeta's output and DELTA's `strict_utf8` source. So
+  a changed zeta builder cannot make a forged result check out.
+- **Signing changes no Decision.** The signature is not in `lock_results_digest` or `content_fingerprint`, so a signed
+  run produces the same Decision and digests as an unsigned one (tested).
+
+Limits, plainly:
+
+- **In-process forgery.** The signer runs in the same program. Any code there that can call it can sign a lock result
+  no evaluation produced, and the checker will accept it. A signature proves who held the signer, not that the
+  evaluation was honest. A separate signer process is the next step.
+- **No freshness in the signature.** A lock result has no time field. The Decision's timestamp,
+  `lock_results_digest` and `prior_state_digest`, and delta's ledger, carry the time.
+- **No key management.** Trust, rotation and revocation belong to the operator's callables.
 
 ## 3. What It Does NOT Do / Non-Goals
 
