@@ -50,7 +50,7 @@ def test_the_engine_still_does_its_job_with_cns_blocked():
                                                    open_locks=("sepsis_lock",), priority=1)])
         keys = KeySet([Key(name="septic_shock", present=True, confidence=0.9)])
         results = LockEvaluator(locks).evaluate_all("patient1", keys, t0)
-        decision = DecisionEngine(rules, locks).decide("patient1", keys, results, t0)
+        decision = DecisionEngine(rules, locks).decide("patient1", keys, results, t0, test_only=True)
         assert decision.decision == "ESCALATE" and decision.decision_fingerprint, decision
         print('ok')
     """))

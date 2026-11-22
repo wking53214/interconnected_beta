@@ -53,7 +53,7 @@ def decide(present, entity_id="patient1", when=T0):
     registry = lock_registry()
     keys = KeySet([Key(name=name, present=True, confidence=conf) for name, conf in present])
     results = LockEvaluator(registry).evaluate_all(entity_id, keys, when)
-    return DecisionEngine(rules(), registry).decide(entity_id, keys, results, when)
+    return DecisionEngine(rules(), registry).decide(entity_id, keys, results, when, test_only=True)
 
 
 @pytest.fixture
@@ -144,7 +144,9 @@ BOUND_CHANGES = {
     "keyset_fingerprint": "a" * 64,
     "content_fingerprint": "e" * 64,
 }
-NOT_BOUND = {"audit_hash", "confidence_basis"}
+# provenance and the two lock digests are not in the CNS digest directly; they are covered by content_fingerprint,
+# which is bound whenever it is set, so changing any of them still changes the digest of an engine-built Decision.
+NOT_BOUND = {"audit_hash", "confidence_basis", "provenance", "lock_results_digest", "prior_state_digest"}
 
 
 def test_every_decision_field_is_either_bound_or_deliberately_not():

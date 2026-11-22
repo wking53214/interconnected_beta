@@ -1,6 +1,11 @@
 """Worked example: raw vitals -> alpha detects Keys -> zeta evaluates Locks
 -> beta produces a governed Decision with narrative.
 
+beta evaluates the Locks itself (DecisionEngine.decide_from_keys): the caller
+hands it the Keys, never lock results. It refuses a KeySet that does not
+report every Key a lock requires, so "never measured" is not read as
+"measured and normal".
+
 Run: PYTHONPATH=.:/path/to/interconnected_zeta:/path/to/interconnected_alpha python3 examples/pediatric_discharge.py
 
 The full pipeline, end to end. This is the same clinical timeline used in
@@ -32,7 +37,7 @@ version, not present in an earlier draft:
 
 from datetime import datetime, timedelta
 
-from zeta import Combination, LockEvaluator, LockRegistry, LockSpec
+from zeta import Combination, LockRegistry, LockSpec
 
 from alpha.packs.pediatric_vitals import VitalsObservation, observe
 
@@ -102,7 +107,6 @@ def build_decision_registry(lock_registry: LockRegistry) -> DecisionRuleRegistry
 
 def main():
     lock_registry = build_lock_registry()
-    lock_evaluator = LockEvaluator(lock_registry)
     decision_registry = build_decision_registry(lock_registry)
     decision_engine = DecisionEngine(decision_registry, lock_registry)
 
@@ -126,17 +130,17 @@ def main():
         vitals = VitalsObservation(heart_rate=hr, oxygen_saturation=o2, respiratory_rate=rr,
                                     temperature=temp, age_months=age)
         keys = observe(vitals)
-        lock_results = lock_evaluator.evaluate_all(patient, keys, ts)
 
         print(f"\n{'='*70}\nT+{hour}h  HR={hr} O2={o2}% RR={rr} temp={temp}")
         print(f"Keys: {sorted(keys.names_present()) or '(none)'}")
-        print(f"Locks: {[(lid, r.open) for lid, r in lock_results.items()]}")
 
         try:
-            decision = decision_engine.decide(patient, keys, lock_results, ts)
+            decision = decision_engine.decide_from_keys(patient, keys, ts)
         except Exception as e:
             print(f"  No decision yet: {e}")
             continue
+
+        print(f"Locks: {[(lid, s.open) for lid, s in sorted(decision_engine.state_store.snapshot(patient).items())]}")
 
         print(f"\nDECISION: {decision.decision}  (confidence={decision.confidence:.2f})")
         print(f"  Newly triggered: {list(decision.newly_triggered_locks) or '(no change)'}")
@@ -144,6 +148,7 @@ def main():
         print(f"  Reversal conditions: {list(decision.reversal_conditions)}")
         print(f"  Instructions: {decision.instructions}")
         print(f"  Fingerprint: {decision.decision_fingerprint[:16]}...")
+        print(f"  Provenance: {decision.provenance}  lock results sha256 {decision.lock_results_digest[:16]}...")
 
 
 if __name__ == "__main__":

@@ -59,25 +59,25 @@ def engine_with(**rule_over):
 def test_the_reproduced_attack_a_str_subclass_in_a_rule_does_not_come_out_of_decide():
     engine, keys, results = engine_with(instructions=LyingStr("Send home."))
     with pytest.raises(ValueError, match="instructions must be a str"):
-        engine.decide("p1", keys, results, T0)
+        engine.decide("p1", keys, results, T0, test_only=True)
 
 
 @pytest.mark.parametrize("field", ["decision_id", "decision", "instructions"])
 def test_a_str_subclass_in_any_rule_text_is_refused_by_decide(field):
     engine, keys, results = engine_with(**{field: LyingStr("x")})
     with pytest.raises(ValueError, match=f"{field} must be a str"):
-        engine.decide("p1", keys, results, T0)
+        engine.decide("p1", keys, results, T0, test_only=True)
 
 
 def test_a_str_subclass_in_reversal_conditions_is_refused_by_decide():
     engine, keys, results = engine_with(reversal_conditions=("ok", LyingStr("x")))
     with pytest.raises(ValueError, match="reversal_conditions"):
-        engine.decide("p1", keys, results, T0)
+        engine.decide("p1", keys, results, T0, test_only=True)
 
 
 def test_an_ordinary_rule_still_decides_and_validates():
     engine, keys, results = engine_with(instructions="Go.", reversal_conditions=("closes",))
-    d = engine.decide("p1", keys, results, T0)
+    d = engine.decide("p1", keys, results, T0, test_only=True)
     d.validate(check_fingerprint=True)
     assert type(d.instructions) is str
 

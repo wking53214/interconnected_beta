@@ -1,4 +1,4 @@
-"""Decision.content_fingerprint: a keyless fingerprint over 13 fields (C7).
+"""Decision.content_fingerprint: a keyless fingerprint over 16 fields (C7; 13 under domain /1, 16 under /2).
 
 decision_fingerprint still covers five inputs and is unchanged. content_fingerprint additionally covers the
 timestamp, confidence, newly triggered locks, narrative, confidence basis and KeySet lineage. It catches a partial
@@ -21,7 +21,7 @@ T0 = datetime(2026, 1, 1, 12, 0, 0)
 COVERED = (
     "entity_id", "decision_id", "decision", "timestamp", "confidence", "triggered_by_locks", "triggered_by_keys",
     "newly_triggered_locks", "reasoning", "reversal_conditions", "instructions", "confidence_basis",
-    "keyset_fingerprint",
+    "keyset_fingerprint", "provenance", "lock_results_digest", "prior_state_digest",
 )
 OLD_COVERED = {"entity_id", "decision_id", "decision", "triggered_by_locks", "triggered_by_keys"}
 EXCLUDED = {"audit_hash", "decision_fingerprint", "content_fingerprint"}
@@ -35,8 +35,7 @@ def engine_decision():
         DecisionRule(decision_id="safe", decision="SAFE", closed_locks=("sepsis_lock",), priority=0),
     ])
     keys = KeySet([Key(name="septic_shock", present=True, confidence=0.8)])
-    results = LockEvaluator(locks).evaluate_all("p1", keys, T0)
-    return DecisionEngine(rules, locks).decide("p1", keys, results, T0)
+    return DecisionEngine(rules, locks).decide_from_keys("p1", keys, T0)
 
 
 def old_check_passes(d):
@@ -61,11 +60,14 @@ MUTATED = {
     "instructions": "Do nothing.",
     "confidence_basis": "absence",
     "keyset_fingerprint": "d" * 64,
+    "provenance": "",
+    "lock_results_digest": "e" * 64,
+    "prior_state_digest": "f" * 64,
 }
 
 
-def test_the_mutation_table_covers_exactly_the_thirteen_fields():
-    assert set(MUTATED) == set(COVERED) and len(COVERED) == 13
+def test_the_mutation_table_covers_exactly_the_sixteen_fields():
+    assert set(MUTATED) == set(COVERED) and len(COVERED) == 16
     assert set(canonical_decision(engine_decision())) == set(COVERED)
     names = {f.name for f in dataclasses.fields(Decision)}
     assert names - set(COVERED) == EXCLUDED
@@ -80,7 +82,7 @@ def test_the_engine_sets_it_and_it_validates():
 
 def test_the_value_is_the_documented_construction():
     d = engine_decision()
-    payload = {"domain": "beta-decision-content/1", **canonical_decision(d)}
+    payload = {"domain": "beta-decision-content/2", **canonical_decision(d)}
     want = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     assert d.content_fingerprint == want
     assert canonical_decision(d)["timestamp"] == T0.isoformat()
@@ -136,7 +138,7 @@ def test_it_is_deterministic_across_calls_and_key_insertion_order():
     a, b = engine_decision(), engine_decision()
     assert a.content_fingerprint == b.content_fingerprint == content_fingerprint(a)
     shuffled = dict(reversed(list(canonical_decision(a).items())))
-    payload = {"domain": "beta-decision-content/1", **shuffled}
+    payload = {"domain": "beta-decision-content/2", **shuffled}
     assert hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest() == a.content_fingerprint
 
 

@@ -65,6 +65,6 @@ def test_engine_produced_decision_still_validates():
     rules = DecisionRuleRegistry([DecisionRule(decision_id="e", decision="ESCALATE", open_locks=("sepsis_lock",), priority=10)])
     keys = KeySet([Key(name="septic_shock", present=True, confidence=0.8)])
     results = LockEvaluator(locks).evaluate_all("p1", keys, T0)
-    decision = DecisionEngine(rules, locks).decide("p1", keys, results, T0)
+    decision = DecisionEngine(rules, locks).decide("p1", keys, results, T0, test_only=True)
     decision.validate()
     assert type(decision.confidence_basis) is str and type(decision.audit_hash) is str

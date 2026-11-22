@@ -35,7 +35,7 @@ def engine_decision(present: bool = True):
     ])
     keys = KeySet([Key(name="septic_shock", present=present, confidence=0.8)])
     results = LockEvaluator(locks).evaluate_all("p1", keys, T0)
-    return DecisionEngine(rules, locks).decide("p1", keys, results, T0)
+    return DecisionEngine(rules, locks).decide("p1", keys, results, T0, test_only=True)
 
 
 # --- valid and omitted -----------------------------------------------------------------------------------------
@@ -219,14 +219,14 @@ def test_an_escalate_on_a_latched_open_lock_reports_absence_basis_and_full_confi
     engine = DecisionEngine(rules, locks)
     sick = KeySet([Key(name="septic_shock", present=True, confidence=0.8)])
     well = KeySet([Key(name="septic_shock", present=False)])
-    first = engine.decide("p1", sick, evaluator.evaluate_all("p1", sick, T0), T0)
+    first = engine.decide("p1", sick, evaluator.evaluate_all("p1", sick, T0), T0, test_only=True)
     assert first.confidence_basis == "keys"
 
     later = T0.replace(minute=10)
     results = evaluator.evaluate_all("p1", well, later)
     assert results["sepsis_lock"].open is True
     assert "cooldown" in results["sepsis_lock"].reasons[0]
-    latched = engine.decide("p1", well, results, later)
+    latched = engine.decide("p1", well, results, later, test_only=True)
     assert latched.decision == "ESCALATE"
     assert latched.triggered_by_keys == ()
     assert latched.confidence == 1.0 and latched.confidence_basis == "absence"

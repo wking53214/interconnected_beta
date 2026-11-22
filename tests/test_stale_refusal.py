@@ -39,7 +39,7 @@ def test_replayed_old_readings_do_not_become_a_discharge():
     stale = ev.evaluate_all("p1", SICK, T0 - timedelta(hours=2))  # a late replay of old sick readings
     assert all(r.stale for r in stale.values()) and not any(r.open for r in stale.values())
     with pytest.raises(StaleLockResultError, match="sepsis_lock"):
-        engine.decide("p1", SICK, stale, T0)
+        engine.decide("p1", SICK, stale, T0, test_only=True)
 
 
 def test_one_stale_result_among_fresh_ones_still_refuses():
@@ -51,7 +51,7 @@ def test_one_stale_result_among_fresh_ones_still_refuses():
     mixed["other_lock"] = ev.evaluate("p1", SICK, "other_lock", T0)  # older than what other_lock applied
     assert mixed["other_lock"].stale and not mixed["sepsis_lock"].stale
     with pytest.raises(StaleLockResultError, match="other_lock"):
-        engine.decide("p1", WELL, mixed, T0)
+        engine.decide("p1", WELL, mixed, T0, test_only=True)
 
 
 def test_the_error_names_every_stale_lock_in_order():
@@ -60,14 +60,14 @@ def test_the_error_names_every_stale_lock_in_order():
     ev.evaluate_all("p1", WELL, T0)
     stale = ev.evaluate_all("p1", SICK, T0 - timedelta(minutes=1))
     with pytest.raises(StaleLockResultError) as caught:
-        engine.decide("p1", SICK, stale, T0)
+        engine.decide("p1", SICK, stale, T0, test_only=True)
     assert "other_lock, sepsis_lock" in str(caught.value)
 
 
 def test_fresh_results_still_decide():
     locks, engine = build()
     fresh = LockEvaluator(locks).evaluate_all("p1", SICK, T0)
-    assert engine.decide("p1", SICK, fresh, T0).decision == "ESCALATE"
+    assert engine.decide("p1", SICK, fresh, T0, test_only=True).decision == "ESCALATE"
 
 
 def test_the_same_timestamp_is_not_stale_and_still_decides():
@@ -76,4 +76,4 @@ def test_the_same_timestamp_is_not_stale_and_still_decides():
     ev.evaluate_all("p1", SICK, T0)
     again = ev.evaluate_all("p1", SICK, T0)
     assert not any(r.stale for r in again.values())
-    assert engine.decide("p1", SICK, again, T0).decision == "ESCALATE"
+    assert engine.decide("p1", SICK, again, T0, test_only=True).decision == "ESCALATE"

@@ -85,6 +85,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Tuple
 
+PROVENANCE_EVALUATED = "evaluated"
+PROVENANCE_SUPPLIED_TEST = "supplied-test"
+PROVENANCES = frozenset({"", PROVENANCE_EVALUATED, PROVENANCE_SUPPLIED_TEST})
+
 
 @dataclass(frozen=True)
 class Decision:
@@ -130,6 +134,20 @@ class Decision:
     # edit, not a forger who recomputes it.
     content_fingerprint: str = ""
 
+    # Where the lock results this Decision rests on came from:
+    #   "evaluated"      DecisionEngine.decide_from_keys ran zeta itself on the KeySet (the normal path).
+    #   "supplied-test"  lock results were handed in through DecisionEngine.decide(..., test_only=True). TEST ONLY:
+    #                    such a Decision must never be acted on or recorded as a real one.
+    #   ""               a legacy or hand-built Decision that records neither.
+    # Covered by content_fingerprint, so it cannot be relabelled without the fingerprint changing.
+    provenance: str = ""
+    # SHA-256 (beta.fingerprint.lock_results_digest) of the lock results the Decision rests on. Set on both engine
+    # paths. The value a later step can have zeta sign.
+    lock_results_digest: str = ""
+    # SHA-256 (beta.fingerprint.lock_state_digest) of the entity's zeta lock states just BEFORE the evaluation, so the
+    # evaluation can be replayed. Set only for provenance "evaluated".
+    prior_state_digest: str = ""
+
     def __post_init__(self) -> None:
         # A list given for a tuple field becomes a tuple, so later mutation of the caller's list cannot reach a
         # frozen Decision. Only a real list is converted; anything else is left for validate() to judge.
@@ -161,7 +179,8 @@ class Decision:
         meaningful for a Decision the engine produced.
         """
         for name in ("entity_id", "decision_id", "decision", "decision_fingerprint", "reasoning", "instructions",
-                     "content_fingerprint", "keyset_fingerprint", "confidence_basis", "audit_hash"):
+                     "content_fingerprint", "keyset_fingerprint", "confidence_basis", "audit_hash",
+                     "provenance", "lock_results_digest", "prior_state_digest"):
             if type(getattr(self, name)) is not str:
                 raise ValueError(f"Decision.{name} must be a str; got {type(getattr(self, name)).__name__}")
         for name in ("triggered_by_locks", "triggered_by_keys", "newly_triggered_locks", "reversal_conditions"):
@@ -173,6 +192,16 @@ class Decision:
         fp = self.keyset_fingerprint
         if fp and not re.fullmatch(r"[0-9a-f]{64}", fp):
             raise ValueError(f"Decision.keyset_fingerprint must be empty or a full lowercase SHA-256; got {fp!r}")
+        if self.provenance not in PROVENANCES:
+            raise ValueError(f"Decision.provenance must be one of {sorted(PROVENANCES)}; got {self.provenance!r}")
+        for name in ("lock_results_digest", "prior_state_digest"):
+            value = getattr(self, name)
+            if value and not re.fullmatch(r"[0-9a-f]{64}", value):
+                raise ValueError(f"Decision.{name} must be empty or a full lowercase SHA-256; got {value!r}")
+        if self.provenance == PROVENANCE_EVALUATED and not (self.lock_results_digest and self.prior_state_digest):
+            raise ValueError("an evaluated Decision must record lock_results_digest and prior_state_digest")
+        if self.provenance == PROVENANCE_SUPPLIED_TEST and self.prior_state_digest:
+            raise ValueError("a supplied-test Decision has no prior lock state to record")
         c = self.confidence
         try:
             bad_confidence = (

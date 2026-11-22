@@ -32,18 +32,41 @@ though the zero-confidence Key wasn't needed to open it at all):
     just one) -> credit only the max-confidence present Key.
   - N_OF_M: only the top `n` strongest present Keys were necessary ->
     credit only those.
+
+Where lock results come from (the trust boundary):
+  - decide_from_keys(entity_id, keys, timestamp) is the normal path. The
+    engine runs zeta's LockEvaluator itself, over its own LockRegistry and
+    its own LockStateStore, so there is no slot through which lock results
+    can be handed in. Before it evaluates anything it refuses a KeySet that
+    does not report every Key some lock requires (present or not), so
+    "never checked" is not read as "checked and clear". The Decision records
+    provenance "evaluated", a digest of the lock results and a digest of the
+    lock states just before the evaluation, so the evaluation can be replayed.
+  - decide(entity_id, keys, lock_results, timestamp, test_only=True) accepts
+    hand-fed lock results, for tests only. Without test_only=True it refuses.
+    Its Decision records provenance "supplied-test" and must never be acted on
+    or recorded as a real one. It does not apply the evidence completeness
+    check, because it exists to exercise rule logic in isolation.
+  Limits: anyone who can run code in this process can still construct a
+  rigged LockStateStore, or call the test path; the provenance stamp makes the
+  second visible but does not prevent it. Proving who produced a result needs
+  signing and an outside record (a later step).
 """
 
 import math
 import dataclasses
 from datetime import datetime
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set
 
-from zeta import Combination, KeySet, LockRegistry, LockResult, LockSpec
+import zeta
+from zeta import Combination, KeySet, LockEvaluator, LockRegistry, LockResult, LockSpec, LockStateStore
 
-from .fingerprint import content_fingerprint, decision_fingerprint
+from .fingerprint import content_fingerprint, decision_fingerprint, lock_results_digest, lock_state_digest
 from .rules import DecisionRule, DecisionRuleRegistry
-from .verdict import Decision
+from .verdict import PROVENANCE_EVALUATED, PROVENANCE_SUPPLIED_TEST, Decision
+
+# Named in lock_results_digest so a digest says which evaluator produced the results it covers.
+EVALUATOR = f"zeta/{getattr(zeta, '__version__', 'unknown')}"
 
 
 # Confidence reported when a rule matches on absence alone (no triggering
@@ -88,6 +111,24 @@ class StaleLockResultError(Exception):
     """
 
 
+class SuppliedLockResultsRefused(Exception):
+    """decide was handed lock results without test_only=True.
+
+    Fail closed: lock results built outside the engine are paperwork the engine cannot check. The normal path is
+    decide_from_keys, where the engine evaluates the locks itself. Hand-fed results are accepted only with
+    test_only=True, and the Decision is stamped provenance "supplied-test".
+    """
+
+
+class MissingEvidenceError(Exception):
+    """The KeySet does not report a Key that some lock requires.
+
+    Fail closed: a Key that was never reported reads to zeta exactly like a Key that was checked and found absent, so
+    a closed lock (and a "safe" Decision) could rest on evidence nobody collected. Report every required Key, with
+    present=False when it was checked and not found. Raised before any lock state changes.
+    """
+
+
 def _geometric_mean(confidences: List[float]) -> float:
     if not confidences:
         return ABSENCE_CONFIDENCE
@@ -115,10 +156,36 @@ def _keys_necessary_for_lock(spec: LockSpec, keys: KeySet) -> Set[str]:
 
 
 class DecisionEngine:
-    def __init__(self, rules: DecisionRuleRegistry, lock_registry: LockRegistry) -> None:
+    def __init__(
+        self,
+        rules: DecisionRuleRegistry,
+        lock_registry: LockRegistry,
+        state_store: Optional[LockStateStore] = None,
+    ) -> None:
         self.rules = rules
         self.lock_registry = lock_registry
         self._validate_rules_reference_known_locks()
+        # The engine's own evaluator, over the same registry its rules were checked against. state_store lets a caller
+        # keep lock state across engines or restarts; it is trusted (see the module docstring's limits).
+        self.lock_evaluator = LockEvaluator(lock_registry, state_store)
+
+    @property
+    def state_store(self) -> LockStateStore:
+        return self.lock_evaluator.state_store
+
+    def _check_evidence_complete(self, keys: KeySet) -> None:
+        missing = sorted(
+            (spec.lock_id, name)
+            for spec in self.lock_registry.all()
+            for name in spec.required_keys
+            if keys.get(name) is None
+        )
+        if missing:
+            raise MissingEvidenceError(
+                "the KeySet does not report Key(s) a lock requires, so their absence was never checked: "
+                + ", ".join(f"{name} (for {lock_id})" for lock_id, name in missing)
+                + "; report each one, with present=False if it was checked and not found"
+            )
 
     def _validate_rules_reference_known_locks(self) -> None:
         for rule in self.rules.all():
@@ -174,12 +241,62 @@ class DecisionEngine:
             )
         return want
 
+    def decide_from_keys(self, entity_id: str, keys: KeySet, timestamp: datetime) -> Decision:
+        """The normal path: evaluate the locks from ``keys`` here, then decide.
+
+        Refuses before touching any lock state if ``keys`` does not report every Key a lock requires. The evaluation
+        and the Decision are one step: if deciding raises, the entity's lock states are put back, so a retry of the
+        same observation counts once (zeta's own rule for evaluate_all).
+        """
+        if not isinstance(timestamp, datetime):
+            raise TypeError(f"timestamp must be a datetime, got {type(timestamp).__name__}")
+        if not isinstance(keys, KeySet):
+            raise TypeError(f"keys must be a zeta KeySet, got {type(keys).__name__}")
+        self._check_evidence_complete(keys)
+        store = self.state_store
+        with store.lock:
+            before = store.snapshot(entity_id)
+            prior = lock_state_digest(before)
+            try:
+                lock_results = self.lock_evaluator.evaluate_all(entity_id, keys, timestamp)
+                return self._decide(entity_id, keys, lock_results, timestamp,
+                                    provenance=PROVENANCE_EVALUATED, prior_state_digest=prior)
+            except BaseException:
+                store.restore(entity_id, before)
+                raise
+
     def decide(
         self,
         entity_id: str,
         keys: KeySet,
         lock_results: Dict[str, LockResult],
         timestamp: datetime,
+        *,
+        test_only: bool = False,
+    ) -> Decision:
+        """TEST ONLY: decide from lock results handed in by the caller.
+
+        Refused unless ``test_only=True``. The Decision is stamped provenance "supplied-test". Use decide_from_keys for
+        any Decision that will be acted on or recorded.
+        """
+        if test_only is not True:
+            raise SuppliedLockResultsRefused(
+                "decide does not accept lock results it did not evaluate; use decide_from_keys(entity_id, keys, "
+                "timestamp). Hand-fed lock results are for tests only: pass test_only=True, and the Decision is "
+                "stamped provenance 'supplied-test'"
+            )
+        return self._decide(entity_id, keys, lock_results, timestamp,
+                            provenance=PROVENANCE_SUPPLIED_TEST, prior_state_digest="")
+
+    def _decide(
+        self,
+        entity_id: str,
+        keys: KeySet,
+        lock_results: Dict[str, LockResult],
+        timestamp: datetime,
+        *,
+        provenance: str,
+        prior_state_digest: str,
     ) -> Decision:
         if not isinstance(timestamp, datetime):
             raise TypeError(f"timestamp must be a datetime, got {type(timestamp).__name__}")
@@ -269,6 +386,9 @@ class DecisionEngine:
             instructions=rule.instructions,
             confidence_basis=confidence_basis,
             keyset_fingerprint=keyset_fingerprint,
+            provenance=provenance,
+            lock_results_digest=lock_results_digest(lock_results, EVALUATOR),
+            prior_state_digest=prior_state_digest,
         )
         # A rule or Key configured with a str or float subclass must not come out as a valid Decision.
         decision.validate()
