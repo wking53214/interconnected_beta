@@ -111,6 +111,19 @@ class StaleLockResultError(Exception):
     """
 
 
+@dataclasses.dataclass(frozen=True)
+class Evaluation:
+    """What decide_from_keys produced: the Decision and the lock results the engine evaluated for it.
+
+    The lock results are an OUTPUT, for a caller that must bind or record them (CNS, delta). Handing them back to the
+    engine is refused like any other lock results. ``decision.lock_results_digest`` is the digest of exactly these, so a
+    consumer can check a copy against the Decision (``beta.lock_results_digest(results, beta.engine.EVALUATOR)``).
+    """
+
+    decision: Decision
+    lock_results: Dict[str, LockResult]
+
+
 class SuppliedLockResultsRefused(Exception):
     """decide was handed lock results without test_only=True.
 
@@ -242,7 +255,11 @@ class DecisionEngine:
         return want
 
     def decide_from_keys(self, entity_id: str, keys: KeySet, timestamp: datetime) -> Decision:
-        """The normal path: evaluate the locks from ``keys`` here, then decide.
+        """The normal path: evaluate the locks from ``keys`` here, then decide. See evaluate_and_decide."""
+        return self.evaluate_and_decide(entity_id, keys, timestamp).decision
+
+    def evaluate_and_decide(self, entity_id: str, keys: KeySet, timestamp: datetime) -> Evaluation:
+        """Evaluate the locks from ``keys`` here, decide, and return both the Decision and the lock results.
 
         Refuses before touching any lock state if ``keys`` does not report every Key a lock requires. The evaluation
         and the Decision are one step: if deciding raises, the entity's lock states are put back, so a retry of the
@@ -259,8 +276,9 @@ class DecisionEngine:
             prior = lock_state_digest(before)
             try:
                 lock_results = self.lock_evaluator.evaluate_all(entity_id, keys, timestamp)
-                return self._decide(entity_id, keys, lock_results, timestamp,
-                                    provenance=PROVENANCE_EVALUATED, prior_state_digest=prior)
+                decision = self._decide(entity_id, keys, lock_results, timestamp,
+                                        provenance=PROVENANCE_EVALUATED, prior_state_digest=prior)
+                return Evaluation(decision=decision, lock_results=dict(lock_results))
             except BaseException:
                 store.restore(entity_id, before)
                 raise

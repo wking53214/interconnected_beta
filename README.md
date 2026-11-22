@@ -12,7 +12,7 @@ Lock states + Keys → a governed **Decision with narrative**. Version `0.1.0`. 
 - **Depended on by.** delta consumes `Decision` per the delta README (not re-checked here).
 - **Fail behavior.** Closed on bad config: an unevaluated lock never matches, ambiguous rules at the same priority raise, and no matching rule raises. Closed to hand-fed `LockResult`s: `decide` refuses them unless the caller passes `test_only=True`, and that Decision is stamped `provenance` `"supplied-test"`. The normal path, `decide_from_keys`, evaluates the locks itself and refuses a KeySet that does not report every Key a lock requires (see "Trust boundary" below). Open, by design, on any lock no rule names: a rule matches on the locks it lists and ignores every other lock, so a rule that requires only `lock_a` closed returned its decision, with confidence 1.0, while `lock_b` was open (EXECUTED 2026-11-17). A rule set must name every lock that should block a decision. Two rules at the same priority are refused only at decide time, when both match, not when the engine is built (EXECUTED 2026-11-17). The content fingerprint is keyless, so someone who edits fields and recomputes it is not caught.
 
-Status: library, version 0.1.0. EXECUTED 2026-11-17 at `9c0d717`, Python 3.13, in a fresh environment: `pip install -e ".[dev]" && pytest` gives 173 passed, 2 skipped (the two need CNS). With the `cns` extra installed and `BETA_REQUIRE_CNS=1`, which is how CI's second job runs, 260 passed and none skipped. Not run: GitHub CI, Python 3.10 to 3.12. On branch `beta/evaluate-locks-itself` (2026-11-22, Python 3.13, CNS installed, `BETA_REQUIRE_CNS=1`): 282 passed (EXECUTED). Against that branch, CNS `chains/spine_run.py` (192 scenarios) fails 170 and passes 22; every failure traced to `decide` refusing hand-fed lock results (EXECUTED), so the harness needs moving to `decide_from_keys`.
+Status: library, version 0.1.0. EXECUTED 2026-11-17 at `9c0d717`, Python 3.13, in a fresh environment: `pip install -e ".[dev]" && pytest` gives 173 passed, 2 skipped (the two need CNS). With the `cns` extra installed and `BETA_REQUIRE_CNS=1`, which is how CI's second job runs, 260 passed and none skipped. Not run: GitHub CI, Python 3.10 to 3.12. On branch `beta/evaluate-locks-itself` (2026-11-22, Python 3.13, CNS installed, `BETA_REQUIRE_CNS=1`): 285 passed (EXECUTED). Against that branch, CNS `chains/spine_run.py` (192 scenarios) fails 170 and passes 22; every failure traced to `decide` refusing hand-fed lock results (EXECUTED), so the harness needs moving to `decide_from_keys`.
 
 ## Trust boundary (lock results)
 
@@ -21,6 +21,7 @@ Found by an independent review on 2026-11-21 (EXECUTED): `decide` accepted lock 
 What changed:
 
 - **`decide_from_keys(entity_id, keys, timestamp)` is the normal path.** The engine holds its own zeta `LockEvaluator` over its own `LockRegistry` (and an optional `LockStateStore` passed to `DecisionEngine(rules, lock_registry, state_store)`) and evaluates the locks itself. There is no argument through which lock results can be handed in.
+- **The results are an output.** `evaluate_and_decide(entity_id, keys, timestamp)` returns an `Evaluation` with the `Decision` and a copy of the lock results the engine evaluated, for a caller that must bind or record them (CNS, delta). `decision.lock_results_digest` covers exactly those results. Handing them back to `decide` is refused like any other lock results. `decide_from_keys` returns only the Decision.
 - **Missing evidence means no decision.** Before evaluating, it raises `MissingEvidenceError` if the KeySet does not report every Key some lock requires. Report a Key that was checked and not found with `present=False`. Lock state is not touched, so missing readings never count toward closing a lock.
 - **One step.** If deciding raises after evaluation, the entity's lock states are put back, so a retry counts once (zeta's own rule for `evaluate_all`).
 - **Replayable record.** An evaluated Decision records `provenance` `"evaluated"`, `lock_results_digest` (SHA-256 of the lock results it rests on, domain `beta-lock-results/1`, naming the evaluator) and `prior_state_digest` (SHA-256 of the entity's lock states just before the evaluation, domain `beta-lock-state/1`). Anyone holding that prior state and the KeySet can re-run the engine and get the same digests and `content_fingerprint` (tested).
@@ -138,6 +139,8 @@ from beta import DecisionEngine, DecisionRule, DecisionRuleRegistry, Decision
 ```
 
 `decide_from_keys(entity_id, keys, timestamp) -> Decision` (normal path)
+
+`evaluate_and_decide(entity_id, keys, timestamp) -> Evaluation(decision, lock_results)` (normal path, with the evaluated lock results as an output)
 
 `decide(entity_id, keys, lock_results, timestamp, *, test_only=True) -> Decision` (tests only; refused without `test_only=True`)
 
