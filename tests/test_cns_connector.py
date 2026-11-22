@@ -143,18 +143,38 @@ BOUND_CHANGES = {
     "instructions": "Do something else.",
     "keyset_fingerprint": "a" * 64,
     "content_fingerprint": "e" * 64,
+    "provenance": "evaluated",
+    "lock_results_digest": "c" * 64,
+    "prior_state_digest": "d" * 64,
 }
-# provenance and the two lock digests are not in the CNS digest directly; they are covered by content_fingerprint,
-# which is bound whenever it is set, so changing any of them still changes the digest of an engine-built Decision.
-NOT_BOUND = {"audit_hash", "confidence_basis", "provenance", "lock_results_digest", "prior_state_digest"}
+# provenance and the two lock digests are bound directly, when set, exactly as delta's connector binds them.
+NOT_BOUND = {"audit_hash", "confidence_basis"}
+OPTIONAL = {"content_fingerprint", "provenance", "lock_results_digest", "prior_state_digest"}
 
 
 def test_every_decision_field_is_either_bound_or_deliberately_not():
     names = {f.name for f in dataclasses.fields(Decision)}
     assert names == set(BOUND_CHANGES) | NOT_BOUND
     assert set(decision_content(Decision("e", "d", "x", T0, 1.0, keyset_fingerprint="b" * 64))) == (
-        set(BOUND_CHANGES) - {"content_fingerprint"}
+        set(BOUND_CHANGES) - OPTIONAL
     )
+
+
+def test_an_engine_evaluated_decision_binds_its_provenance_and_both_digests():
+    reported = [Key(name="septic_shock", present=True, confidence=0.95)] + [
+        Key(name=name, present=False) for name in ("respiratory_distress", "fever", "tachycardia")]
+    decision = DecisionEngine(rules(), lock_registry()).decide_from_keys("patient1", KeySet(reported), T0)
+    content = decision_content(decision)
+    assert content["provenance"] == "evaluated"
+    assert content["lock_results_digest"] == decision.lock_results_digest
+    assert content["prior_state_digest"] == decision.prior_state_digest
+
+
+def test_a_str_subclass_provenance_is_refused(base):
+    class Lying(str):
+        pass
+    with pytest.raises(TypeError):
+        decision_content(dataclasses.replace(base, provenance=Lying("evaluated")))
 
 
 @pytest.mark.parametrize("name", sorted(BOUND_CHANGES))

@@ -214,6 +214,16 @@ def _decision_content(decision: Decision) -> Dict[str, Any]:
     # Present only when set, like keyset_fingerprint, so a legacy Decision's content and digest are unchanged.
     if decision.content_fingerprint:
         content["content_fingerprint"] = _digest(decision.content_fingerprint, "Decision.content_fingerprint")
+    # How the engine produced the Decision, and the digests of the lock results and lock state it rests on. Present only
+    # when set, so a legacy Decision's content and digest are unchanged. Delta's connector binds the same three fields
+    # the same way, so beta's digest of a Decision equals delta's digest of the Decision it recorded.
+    if decision.provenance:
+        if type(decision.provenance) is not str:
+            raise TypeError(f"Decision.provenance must be a str; got {type(decision.provenance).__name__}")
+        content["provenance"] = decision.provenance
+    for name in ("lock_results_digest", "prior_state_digest"):
+        if getattr(decision, name):
+            content[name] = _digest(getattr(decision, name), f"Decision.{name}")
     return content
 
 
