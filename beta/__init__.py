@@ -17,7 +17,7 @@ unevaluated locks).
 from .verdict import Decision
 from .rules import DecisionRule, DecisionRuleRegistry
 from .engine import (DecisionEngine, EntityMismatchError, NoMatchingRuleError, AmbiguousRuleError, KeySetMismatchError,
-                     StaleLockResultError, SuppliedLockResultsRefused, MissingEvidenceError)
+                     StaleLockResultError, SuppliedLockResultsRefused, MissingEvidenceError, Evaluation)
 from .fingerprint import (canonical_decision, content_fingerprint, decision_fingerprint, lock_results_digest,
                           lock_state_digest)
 from .verdict import PROVENANCE_EVALUATED, PROVENANCE_SUPPLIED_TEST
@@ -34,6 +34,7 @@ __all__ = [
     "StaleLockResultError",
     "SuppliedLockResultsRefused",
     "MissingEvidenceError",
+    "Evaluation",
     "PROVENANCE_EVALUATED",
     "PROVENANCE_SUPPLIED_TEST",
     "lock_results_digest",
