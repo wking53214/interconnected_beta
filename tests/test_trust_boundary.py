@@ -17,6 +17,7 @@ import pytest
 from zeta import Combination, Key, KeySet, LockRegistry, LockResult, LockSpec, LockStateStore
 
 from beta import (
+    Evaluation,
     PROVENANCE_EVALUATED,
     PROVENANCE_SUPPLIED_TEST,
     DecisionEngine,
@@ -26,7 +27,9 @@ from beta import (
     NoMatchingRuleError,
     SuppliedLockResultsRefused,
     content_fingerprint,
+    lock_results_digest,
 )
+from beta.engine import EVALUATOR
 
 T0 = datetime(2026, 11, 22, 8, 0, 0)
 SEPSIS = ("septic_shock", "respiratory_distress")
@@ -180,3 +183,27 @@ def test_a_different_prior_state_gives_a_different_record():
 def test_decide_from_keys_wants_a_real_keyset():
     with pytest.raises(TypeError):
         engine().decide_from_keys("p1", {"fever": True}, T0)
+
+
+# ------------------------------------------------------------------ the results are an output, not an input
+
+def test_evaluate_and_decide_returns_the_results_the_decision_rests_on():
+    ev = engine().evaluate_and_decide("p1", reading(fever=True), T0)
+    assert isinstance(ev, Evaluation)
+    assert set(ev.lock_results) == {"sepsis_lock", "abnormal_vitals_lock"}
+    assert ev.decision.lock_results_digest == lock_results_digest(ev.lock_results, EVALUATOR)
+    assert all(r.entity_id == "p1" and r.keyset_fingerprint for r in ev.lock_results.values())
+
+
+def test_handing_the_returned_results_back_is_refused_like_any_others():
+    e = engine()
+    ev = e.evaluate_and_decide("p1", reading(fever=True), T0)
+    with pytest.raises(SuppliedLockResultsRefused):
+        e.decide("p1", reading(fever=True), ev.lock_results, T0)
+
+
+def test_editing_the_returned_results_does_not_touch_the_engine():
+    e = engine()
+    ev = e.evaluate_and_decide("p1", reading(septic_shock=True), T0)
+    ev.lock_results.clear()
+    assert e.state_store.snapshot("p1")["sepsis_lock"].open is True
